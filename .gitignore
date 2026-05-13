@@ -29,6 +29,7 @@ env/
 .vscode/
 
 # Dataabase
+data/
 *.sqlite3
 *.db
 *.sql

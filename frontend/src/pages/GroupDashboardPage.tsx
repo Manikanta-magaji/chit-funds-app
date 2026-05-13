@@ -17,6 +17,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import DrawModal from "../components/DrawModal";
 import InstallmentPanel from "../components/InstallmentPanel";
+import UpiPaymentModal from "../components/UpiPaymentModal";
 import type { User } from "../api/types";
 
 interface SubMemberDraft {
@@ -120,6 +121,7 @@ export default function GroupDashboardPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [showDraw, setShowDraw] = useState(false);
+  const [showPayModal, setShowPayModal] = useState(false);
 
   const deleteGroupMutation = useMutation({
     mutationFn: () => deleteGroup(groupId),
@@ -322,7 +324,21 @@ export default function GroupDashboardPage() {
           <span className="stat-label">This Month's Winner</span>
           <span className="stat-value">
             {currentCycleHistory?.winner_slot
-              ? <span>🏆 {currentCycleHistory.winner_slot.name}</span>
+              ? (
+                <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "0.4rem" }}>
+                  <span>🏆 {currentCycleHistory.winner_slot.name}</span>
+                  {currentCycleHistory.winner_slot.upi_id
+                    ? (
+                      <button className="btn btn-sm btn-primary" onClick={() => setShowPayModal(true)}>
+                        💸 Pay Now
+                      </button>
+                    )
+                    : isAdmin && (
+                      <span className="text-muted" style={{ fontSize: "0.78rem" }}>No UPI ID — ask winner to update profile</span>
+                    )
+                  }
+                </span>
+              )
               : <span className="text-muted">Not drawn yet</span>}
           </span>
         </div>
@@ -604,6 +620,17 @@ export default function GroupDashboardPage() {
             qc.invalidateQueries({ queryKey: ["installments", groupId, group.current_cycle] });
             qc.invalidateQueries({ queryKey: ["slots", groupId] });
           }}
+        />
+      )}
+
+      {showPayModal && currentCycleHistory?.winner_slot?.upi_id && (
+        <UpiPaymentModal
+          winnerName={currentCycleHistory.winner_slot.display_name ?? currentCycleHistory.winner_slot.name}
+          winnerUpiId={currentCycleHistory.winner_slot.upi_id}
+          amount={group.installment_amount}
+          groupName={group.name}
+          cycleNumber={group.current_cycle}
+          onClose={() => setShowPayModal(false)}
         />
       )}
 

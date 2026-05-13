@@ -551,4 +551,91 @@ a:hover { text-decoration: underline; }
 .ml-1 { margin-left: .3rem; }
 .small { font-size: .82rem; }
 
+/* ── UPI Payment Modal ── */
+.upi-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .45);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.upi-modal {
+  background: var(--bg-card);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.18);
+  overflow: hidden;
+}
+.upi-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .9rem 1.2rem;
+  border-bottom: 1px solid var(--border);
+}
+.upi-modal-header h3 { font-size: 1rem; font-weight: 600; margin: 0; }
+.upi-modal-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  color: var(--text-muted);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.upi-modal-close:hover { background: var(--bg); }
+.upi-modal-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .75rem;
+  padding: 1.4rem 1.2rem;
+}
+.upi-qr-wrapper {
+  padding: .75rem;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.upi-amount {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.upi-note {
+  font-size: .82rem;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.5;
+}
+.upi-sub-note {
+  font-size: .76rem;
+  color: var(--text-muted);
+  text-align: center;
+  font-style: italic;
+}
+.btn-upi {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  padding: .55rem 1.4rem;
+  background: #22a861;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: .9rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  width: 100%;
+}
+.btn-upi:hover { background: #1a8a4e; text-decoration: none; color: #fff; }
+
 

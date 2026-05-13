@@ -246,7 +246,14 @@ def draw_history(
         winner_slot = None
         if cycle.winner_slot_id:
             ws = db.query(ContributorSlot).filter(ContributorSlot.id == cycle.winner_slot_id).first()
-            winner_slot = {"id": ws.id, "name": ws.name} if ws else None
+            if ws:
+                linked_user = db.query(User).filter(User.id == ws.linked_user_id).first() if ws.linked_user_id else None
+                winner_slot = {
+                    "id": ws.id,
+                    "name": ws.name,
+                    "upi_id": linked_user.upi_id if linked_user else None,
+                    "display_name": linked_user.display_name if linked_user else ws.name,
+                }
         result.append({
             "cycle_number": cycle.cycle_number,
             "is_closed": cycle.is_closed,

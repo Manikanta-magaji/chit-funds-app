@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getInstallments, markInstallment, selfReportPayment, confirmPayment, recordPayout, winnerConfirmPayout } from "../api/endpoints";
+import { getInstallments, markInstallment, confirmPayment, recordPayout, winnerConfirmPayout } from "../api/endpoints";
 import { useAuth } from "../context/AuthContext";
 import type { Slot } from "../api/types";
 
@@ -63,11 +63,6 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
     onSuccess: invalidate,
   });
 
-  const selfReportMutation = useMutation({
-    mutationFn: (slotId: number) => selfReportPayment(groupId, viewCycle, slotId),
-    onSuccess: invalidate,
-  });
-
   const confirmMutation = useMutation({
     mutationFn: ({ slotId, approve }: { slotId: number; approve: boolean }) =>
       confirmPayment(groupId, viewCycle, slotId, approve),
@@ -96,11 +91,6 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
 
   const mySlotIds = slots
     .filter((s: any) => s.linked_user_id === user!.id)
-    .map((s: any) => s.id);
-
-  // Slot IDs where user is a sub-member
-  const mySubMemberSlotIds = slots
-    .filter((s: any) => s.sub_members?.some((sm: any) => sm.linked_user_id === user!.id))
     .map((s: any) => s.id);
 
   const isCurrentCycleView = viewCycle === currentCycle;
@@ -187,7 +177,6 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
                 const hasSubMembers = subMembers.length > 1;
                 const isExpanded = expandedSlots.has(item.slot_id);
                 const isMySlot = mySlotIds.includes(item.slot_id);
-                const isMySubMemberSlot = mySubMemberSlotIds.includes(item.slot_id);
                 const isWinner = winnerSlotId === item.slot_id;
 
                 return (

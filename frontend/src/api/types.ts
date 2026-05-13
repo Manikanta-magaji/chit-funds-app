@@ -50,7 +50,7 @@ export interface GroupDetail {
 export interface DrawHistoryEntry {
   cycle_number: number;
   is_closed: boolean;
-  winner_slot: { id: number; name: string } | null;
+  winner_slot: { id: number; name: string; upi_id: string | null; display_name: string | null } | null;
   payout_status: "pending" | "completed" | null;
 }
 

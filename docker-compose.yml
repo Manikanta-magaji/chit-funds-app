@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: chit-fund-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./data/chit_fund.db
+      - SECRET_KEY=change-me-in-production
+      - GOOGLE_CLIENT_ID=
+      - GOOGLE_CLIENT_SECRET=
+      - GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback
+      - CORS_ORIGINS=["http://localhost:3000"]
+      - FRONTEND_URL=http://localhost:3000
+    volumes:
+      - ./data:/app/data
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    networks:
+      - chit-fund-net
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: chit-fund-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - chit-fund-net
+
+networks:
+  chit-fund-net:
+    driver: bridge
