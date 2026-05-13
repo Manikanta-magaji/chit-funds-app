@@ -1,0 +1,21 @@
+schema: spec-driven
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+context: |
+  Tech stack: FastAPI, React.js and SQLite
+  Frontend style: Design thats simple and intuitive, with a focus on usability and accessibility. Keeping in mind that the end users are not tech savvy and may have limited experience with digital platforms. Make it as user-friendly as possible, with clear navigation and easy-to-understand interfaces.
+  Backend style: RESTful APIs with Pydantic models
+  Domain: Chit fund application for managing contributions, payouts, and member information.
+
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
