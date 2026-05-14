@@ -8,6 +8,7 @@ interface Props {
   groupName: string;
   cycleNumber: number;
   onClose: () => void;
+  breakdown?: { label: string; amount: number }[];
 }
 
 export default function UpiPaymentModal({
@@ -17,6 +18,7 @@ export default function UpiPaymentModal({
   groupName,
   cycleNumber,
   onClose,
+  breakdown,
 }: Props) {
   const note = `Chit fund payment - ${groupName} cycle ${cycleNumber}`;
   const upiUri =
@@ -47,7 +49,20 @@ export default function UpiPaymentModal({
             <QRCodeSVG value={upiUri} size={220} level="M" />
           </div>
 
-          <p className="upi-amount">₹{amount.toLocaleString()}</p>
+          {breakdown && breakdown.length >= 2 && (
+            <ul className="upi-breakdown">
+              {breakdown.map((row, i) => (
+                <li key={i} className="upi-breakdown-row">
+                  <span className="upi-breakdown-label">{row.label}</span>
+                  <span className="upi-breakdown-amount">₹{row.amount.toLocaleString()}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <p className="upi-amount">
+            {breakdown && breakdown.length >= 2 ? "Total: " : ""}₹{amount.toLocaleString()}
+          </p>
 
           <a href={upiUri} className="btn btn-upi" rel="noopener noreferrer">
             Open in UPI App

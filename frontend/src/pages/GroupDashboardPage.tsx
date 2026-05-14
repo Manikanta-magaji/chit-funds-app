@@ -13,6 +13,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getGroup, listSlots, getDrawHistory, addSlot, removeSlot, advanceCycle,
   setSubMembers, searchUsers, linkSlotToUser, linkSubMemberToUser, deleteGroup,
+  getInstallments,
 } from "../api/endpoints";
 import { useAuth } from "../context/AuthContext";
 import DrawModal from "../components/DrawModal";
@@ -273,6 +274,48 @@ export default function GroupDashboardPage() {
   const currentCycleHistory = history.find((h) => h.cycle_number === group?.current_cycle);
   const winnerSlotId = currentCycleHistory?.winner_slot?.id ?? null;
 
+  // Read installments from cache (already fetched by InstallmentPanel); no extra network call
+  const { data: currentInstallments = [], isFetched: installmentsFetched } = useQuery({
+    queryKey: ["installments", groupId, group?.current_cycle ?? 0],
+    queryFn: () => getInstallments(groupId, group!.current_cycle),
+    enabled: !!group,
+  });
+
+  // Collect all positions (primary slots + sub-member entries) belonging to the current user,
+  // excluding the winner slot. Used to compute the consolidated Pay Now amount.
+  const mySlotIds = slots
+    .filter((s: any) => s.linked_user_id === user!.id)
+    .map((s: any) => s.id as number);
+
+  const iAmTheWinner = mySlotIds.includes(winnerSlotId ?? -1);
+
+  const myPayNowPositions: { label: string; amount: number }[] = (() => {
+    const positions: { label: string; amount: number }[] = [];
+    for (const s of slots as any[]) {
+      if (s.linked_user_id !== user!.id) continue;
+      if (s.id === winnerSlotId) continue; // winner slot excluded
+      const inst = (currentInstallments as any[]).find((i) => i.slot_id === s.id);
+      if (!inst || inst.status !== "paid") {
+        positions.push({ label: s.name, amount: group?.installment_amount ?? 0 });
+      }
+    }
+    for (const s of slots as any[]) {
+      if (s.id === winnerSlotId) continue; // winner slot excluded
+      for (const sm of (s.sub_members ?? []) as any[]) {
+        if (sm.linked_user_id !== user!.id) continue;
+        const inst = (currentInstallments as any[]).find((i) => i.slot_id === s.id);
+        const smPayment = inst?.payments?.find((p: any) => p.sub_member_id === sm.id);
+        if (!smPayment || smPayment.status !== "paid") {
+          positions.push({ label: `${s.name} (${sm.name})`, amount: sm.split_amount as number });
+        }
+      }
+    }
+    return positions;
+  })();
+
+  const payNowTotal = myPayNowPositions.reduce((sum, p) => sum + p.amount, 0);
+  const payNowBreakdown = myPayNowPositions;
+
   /** Returns true if userId is already linked to any slot or sub-member in the group. */
   const isUserAlreadyInGroup = (userId: number, excludeSlotId?: number): boolean => {
     return slots.some((s: any) => {
@@ -364,15 +407,19 @@ export default function GroupDashboardPage() {
               ? (
                 <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "0.4rem" }}>
                   <span>🏆 {currentCycleHistory.winner_slot.name}</span>
-                  {currentCycleHistory.winner_slot.upi_id
-                    ? (
-                      <button className="btn btn-sm btn-primary" onClick={() => setShowPayModal(true)}>
-                        💸 Pay Now
-                      </button>
-                    )
-                    : isAdmin && (
-                      <span className="text-muted" style={{ fontSize: "0.78rem" }}>No UPI ID — ask winner to update profile</span>
-                    )
+                  {iAmTheWinner
+                    ? <span className="text-muted" style={{ fontSize: "0.85rem" }}>You won this cycle 🎉</span>
+                    : installmentsFetched && payNowTotal === 0
+                      ? <span className="text-muted" style={{ fontSize: "0.85rem" }}>✓ All payments cleared</span>
+                      : currentCycleHistory.winner_slot.upi_id
+                        ? (
+                          <button className="btn btn-sm btn-primary" onClick={() => setShowPayModal(true)}>
+                            💸 Pay Now
+                          </button>
+                        )
+                        : isAdmin && (
+                          <span className="text-muted" style={{ fontSize: "0.78rem" }}>No UPI ID — ask winner to update profile</span>
+                        )
                   }
                 </span>
               )
@@ -665,9 +712,10 @@ export default function GroupDashboardPage() {
         <UpiPaymentModal
           winnerName={currentCycleHistory.winner_slot.display_name ?? currentCycleHistory.winner_slot.name}
           winnerUpiId={currentCycleHistory.winner_slot.upi_id}
-          amount={group.installment_amount}
+          amount={payNowTotal || group.installment_amount}
           groupName={group.name}
           cycleNumber={group.current_cycle}
+          breakdown={payNowBreakdown.length > 1 ? payNowBreakdown : undefined}
           onClose={() => setShowPayModal(false)}
         />
       )}

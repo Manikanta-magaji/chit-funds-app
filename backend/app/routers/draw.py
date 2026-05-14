@@ -9,7 +9,7 @@ from app.core.jwt import require_complete_profile
 from app.db.session import get_db
 from app.models.models import (
     ChitGroup, ContributorSlot, Cycle, GroupAdmin,
-    InstallmentPayment, PaymentStatus, User,
+    InstallmentPayment, PaymentStatus, SubMember, User,
 )
 
 router = APIRouter()
@@ -177,15 +177,33 @@ def confirm_draw(
     cycle.winner_slot_id = body.slot_id
     now = datetime.now(timezone.utc)
 
-    # Auto-mark the winner's installment(s) as paid.
-    # If the slot has sub-members, create a paid record for each one.
-    # Otherwise create a single slot-level record.
-    if slot.sub_members:
-        for sm in slot.sub_members:
+    def _mark_slot_paid(target_slot: ContributorSlot) -> None:
+        """Auto-mark all installment positions for a slot as paid for this cycle."""
+        if target_slot.sub_members:
+            for sm in target_slot.sub_members:
+                existing = db.query(InstallmentPayment).filter(
+                    InstallmentPayment.cycle_id == cycle.id,
+                    InstallmentPayment.slot_id == target_slot.id,
+                    InstallmentPayment.sub_member_id == sm.id,
+                ).first()
+                if existing:
+                    existing.status = PaymentStatus.paid
+                    existing.paid_at = now
+                    existing.confirmed_by = current_user.id
+                else:
+                    db.add(InstallmentPayment(
+                        cycle_id=cycle.id,
+                        slot_id=target_slot.id,
+                        sub_member_id=sm.id,
+                        status=PaymentStatus.paid,
+                        paid_at=now,
+                        confirmed_by=current_user.id,
+                    ))
+        else:
             existing = db.query(InstallmentPayment).filter(
                 InstallmentPayment.cycle_id == cycle.id,
-                InstallmentPayment.slot_id == body.slot_id,
-                InstallmentPayment.sub_member_id == sm.id,
+                InstallmentPayment.slot_id == target_slot.id,
+                InstallmentPayment.sub_member_id == None,
             ).first()
             if existing:
                 existing.status = PaymentStatus.paid
@@ -194,17 +212,18 @@ def confirm_draw(
             else:
                 db.add(InstallmentPayment(
                     cycle_id=cycle.id,
-                    slot_id=body.slot_id,
-                    sub_member_id=sm.id,
+                    slot_id=target_slot.id,
                     status=PaymentStatus.paid,
                     paid_at=now,
                     confirmed_by=current_user.id,
                 ))
-    else:
+
+    def _mark_sub_member_paid(slot_id: int, sm: SubMember) -> None:
+        """Auto-mark a single sub-member payment as paid for this cycle."""
         existing = db.query(InstallmentPayment).filter(
             InstallmentPayment.cycle_id == cycle.id,
-            InstallmentPayment.slot_id == body.slot_id,
-            InstallmentPayment.sub_member_id == None,
+            InstallmentPayment.slot_id == slot_id,
+            InstallmentPayment.sub_member_id == sm.id,
         ).first()
         if existing:
             existing.status = PaymentStatus.paid
@@ -213,11 +232,49 @@ def confirm_draw(
         else:
             db.add(InstallmentPayment(
                 cycle_id=cycle.id,
-                slot_id=body.slot_id,
+                slot_id=slot_id,
+                sub_member_id=sm.id,
                 status=PaymentStatus.paid,
                 paid_at=now,
                 confirmed_by=current_user.id,
             ))
+
+    # Mark the winning slot as paid.
+    _mark_slot_paid(slot)
+
+    # Collect all user IDs associated with the winning slot:
+    #   - the slot's own linked user (full/standalone slot), OR
+    #   - each sub-member's linked user (shared slot with sub-members).
+    winner_user_ids: set[int] = set()
+    if slot.linked_user_id is not None:
+        winner_user_ids.add(slot.linked_user_id)
+    for sm in (slot.sub_members or []):
+        if sm.linked_user_id is not None:
+            winner_user_ids.add(sm.linked_user_id)
+
+    # For each winning user, mark every other position they hold in this group as paid.
+    for winner_user_id in winner_user_ids:
+        # Full slots directly owned by this user (excluding the winning slot itself)
+        other_full_slots = db.query(ContributorSlot).filter(
+            ContributorSlot.group_id == group_id,
+            ContributorSlot.linked_user_id == winner_user_id,
+            ContributorSlot.id != slot.id,
+        ).all()
+        for other_slot in other_full_slots:
+            _mark_slot_paid(other_slot)
+
+        # Sub-member shares in shared slots not already covered
+        covered_slot_ids = {slot.id} | {s.id for s in other_full_slots}
+        sub_member_entries = db.query(SubMember).filter(
+            SubMember.linked_user_id == winner_user_id,
+        ).all()
+        for sm_entry in sub_member_entries:
+            parent_slot = db.query(ContributorSlot).filter(
+                ContributorSlot.id == sm_entry.slot_id,
+                ContributorSlot.group_id == group_id,
+            ).first()
+            if parent_slot and parent_slot.id not in covered_slot_ids:
+                _mark_sub_member_paid(parent_slot.id, sm_entry)
 
     db.commit()
     return {
