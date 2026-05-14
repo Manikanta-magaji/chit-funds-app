@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from app.core.jwt import get_current_user, require_complete_profile
+from app.core.mobile import normalize_mobile
 from app.db.session import get_db
 from app.models.models import User
 from app.schemas.auth import ProfileUpdateRequest, UserOut
@@ -27,9 +28,9 @@ def update_profile(
             detail="Display name is already taken. Please choose a different name.",
         )
     current_user.display_name = body.display_name
-    current_user.mobile = body.mobile
+    current_user.mobile_number = normalize_mobile(body.mobile_number)
     # Infer UPI ID from mobile if not provided
-    current_user.upi_id = body.upi_id if body.upi_id else f"{body.mobile}@upi"
+    current_user.upi_id = body.upi_id if body.upi_id else f"{normalize_mobile(body.mobile_number)}@upi"
     current_user.is_profile_complete = True
     db.commit()
     db.refresh(current_user)
@@ -42,12 +43,14 @@ def search_users(
     db: Session = Depends(get_db),
     _: User = Depends(require_complete_profile),
 ):
-    """Return users matching by partial display_name/email or exact mobile."""
+    """Return users matching by partial display_name/email or exact mobile number."""
     pattern = f"%{q}%"
+    # Also try matching as normalized mobile
+    mobile_q = normalize_mobile(q)
     results = db.query(User).filter(
         User.display_name.ilike(pattern)
-        | User.email.ilike(pattern)
-        | (User.mobile == q)
+        | (User.email.isnot(None) & User.email.ilike(pattern))
+        | (User.mobile_number == mobile_q)
     ).all()
     return results
 

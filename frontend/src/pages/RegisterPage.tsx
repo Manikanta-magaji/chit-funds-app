@@ -5,6 +5,8 @@ import { register } from "../api/endpoints";
 import { useAuth } from "../context/AuthContext";
 
 export default function RegisterPage() {
+  const [fullName, setFullName] = useState("");
+  const [mobileNumber, setMobileNumber] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -16,6 +18,14 @@ export default function RegisterPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
+    if (!fullName.trim()) {
+      setError("Full name is required.");
+      return;
+    }
+    if (!mobileNumber.trim()) {
+      setError("Mobile number is required.");
+      return;
+    }
     if (password.length < 8) {
       setError("Password must be at least 8 characters.");
       return;
@@ -26,7 +36,7 @@ export default function RegisterPage() {
     }
     setLoading(true);
     try {
-      const user = await register(email, password);
+      const user = await register(mobileNumber.trim(), password, email.trim() || undefined, fullName.trim());
       setUser(user);
       navigate("/profile-setup");
     } catch (err: any) {
@@ -44,14 +54,37 @@ export default function RegisterPage() {
 
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="form-group">
-            <label htmlFor="email">Email</label>
+            <label htmlFor="fullName">Full Name</label>
+            <input
+              id="fullName"
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Your full name"
+              required
+              autoComplete="name"
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="mobile">Mobile Number</label>
+            <input
+              id="mobile"
+              type="tel"
+              value={mobileNumber}
+              onChange={(e) => setMobileNumber(e.target.value)}
+              placeholder="10-digit mobile number"
+              required
+              autoComplete="tel"
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="email">Email <span className="hint">(optional)</span></label>
             <input
               id="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
-              required
               autoComplete="email"
             />
           </div>

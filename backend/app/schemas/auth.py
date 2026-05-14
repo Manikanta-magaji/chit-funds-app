@@ -3,20 +3,22 @@ from typing import Optional
 
 
 class RegisterRequest(BaseModel):
-    email: EmailStr
+    mobile_number: str
+    display_name: str
     password: str
+    email: Optional[EmailStr] = None
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    identifier: str   # mobile number or email
     password: str
 
 
 class UserOut(BaseModel):
     id: int
-    email: str
+    email: Optional[str]
     display_name: Optional[str]
-    mobile: Optional[str]
+    mobile_number: Optional[str]
     upi_id: Optional[str]
     is_profile_complete: bool
 
@@ -25,5 +27,5 @@ class UserOut(BaseModel):
 
 class ProfileUpdateRequest(BaseModel):
     display_name: str
-    mobile: str
+    mobile_number: str
     upi_id: Optional[str] = None

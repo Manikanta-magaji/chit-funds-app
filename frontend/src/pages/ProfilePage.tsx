@@ -6,13 +6,13 @@ import { useAuth } from "../context/AuthContext";
 export default function ProfilePage() {
   const { user, setUser } = useAuth();
   const [displayName, setDisplayName] = useState(user?.display_name || "");
-  const [mobile, setMobile] = useState(user?.mobile || "");
+  const [mobileNumber, setMobileNumber] = useState(user?.mobile_number || "");
   const [upiId, setUpiId] = useState(user?.upi_id || "");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const inferredUpi = mobile ? `${mobile}@upi` : "";
+  const inferredUpi = mobileNumber ? `${mobileNumber}@upi` : "";
   const isInferred = user?.upi_id === inferredUpi;
 
   const handleSubmit = async (e: FormEvent) => {
@@ -22,7 +22,7 @@ export default function ProfilePage() {
     try {
       const updated = await updateProfile({
         display_name: displayName.trim(),
-        mobile: mobile.trim(),
+        mobile_number: mobileNumber.trim(),
         upi_id: upiId.trim() || undefined,
       });
       setUser(updated);
@@ -58,8 +58,8 @@ export default function ProfilePage() {
             <input
               id="mobile"
               type="tel"
-              value={mobile}
-              onChange={(e) => setMobile(e.target.value)}
+              value={mobileNumber}
+              onChange={(e) => setMobileNumber(e.target.value)}
               required
             />
           </div>

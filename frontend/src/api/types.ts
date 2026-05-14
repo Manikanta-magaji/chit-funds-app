@@ -1,8 +1,8 @@
 export interface User {
   id: number;
-  email: string;
+  email: string | null;
   display_name: string | null;
-  mobile: string | null;
+  mobile_number: string | null;
   upi_id: string | null;
   is_profile_complete: boolean;
 }

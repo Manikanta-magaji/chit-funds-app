@@ -5,7 +5,7 @@ import { login } from "../api/endpoints";
 import { useAuth } from "../context/AuthContext";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -17,7 +17,7 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const user = await login(email, password);
+      const user = await login(identifier, password);
       setUser(user);
       navigate(user.is_profile_complete ? "/groups" : "/profile-setup");
     } catch (err: any) {
@@ -35,15 +35,15 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="form-group">
-            <label htmlFor="email">Email</label>
+            <label htmlFor="identifier">Mobile number or email</label>
             <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
+              id="identifier"
+              type="text"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder="Mobile number or email"
               required
-              autoComplete="email"
+              autoComplete="username"
             />
           </div>
           <div className="form-group">

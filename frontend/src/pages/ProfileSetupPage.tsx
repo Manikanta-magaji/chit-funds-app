@@ -8,24 +8,24 @@ export default function ProfileSetupPage() {
   const { user, setUser } = useAuth();
   const navigate = useNavigate();
   const [displayName, setDisplayName] = useState(user?.display_name || "");
-  const [mobile, setMobile] = useState(user?.mobile || "");
+  const [mobileNumber, setMobileNumber] = useState(user?.mobile_number || "");
   const [upiId, setUpiId] = useState(user?.upi_id || "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   // Auto-infer UPI when mobile changes (if not manually edited)
-  const inferredUpi = mobile ? `${mobile}@upi` : "";
+  const inferredUpi = mobileNumber ? `${mobileNumber}@upi` : "";
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
     if (!displayName.trim()) { setError("Name is required."); return; }
-    if (!mobile.trim()) { setError("Mobile number is required."); return; }
+    if (!mobileNumber.trim()) { setError("Mobile number is required."); return; }
     setLoading(true);
     try {
       const updated = await updateProfile({
         display_name: displayName.trim(),
-        mobile: mobile.trim(),
+        mobile_number: mobileNumber.trim(),
         upi_id: upiId.trim() || undefined,
       });
       setUser(updated);
@@ -60,8 +60,8 @@ export default function ProfileSetupPage() {
             <input
               id="mobile"
               type="tel"
-              value={mobile}
-              onChange={(e) => setMobile(e.target.value)}
+              value={mobileNumber}
+              onChange={(e) => setMobileNumber(e.target.value)}
               placeholder="10-digit mobile number"
               required
             />

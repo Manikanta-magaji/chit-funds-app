@@ -2,9 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import RedirectResponse
 import httpx
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.core.jwt import create_access_token, get_current_user
+from app.core.mobile import normalize_mobile
 from app.core.security import hash_password, verify_password
 from app.db.session import get_db
 from app.models.models import User
@@ -24,19 +26,32 @@ COOKIE_KWARGS = dict(httponly=True, samesite="lax", secure=False)  # set secure=
 def register(body: RegisterRequest, response: Response, db: Session = Depends(get_db)):
     if len(body.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
-    existing = db.query(User).filter(User.email == body.email).first()
-    if existing:
+
+    mobile = normalize_mobile(body.mobile_number)
+
+    # Check for duplicate mobile
+    if db.query(User).filter(User.mobile_number == mobile).first():
+        raise HTTPException(status_code=400, detail="Mobile number already registered.")
+
+    # Check for duplicate email (only when provided)
+    if body.email and db.query(User).filter(User.email == body.email).first():
         raise HTTPException(status_code=400, detail="Email already registered.")
 
-    # Derive display_name from email prefix
-    display_name = body.email.split("@")[0]
+    display_name = body.display_name.strip()
+    if not display_name:
+        raise HTTPException(status_code=400, detail="Full name is required.")
     user = User(
-        email=body.email,
+        mobile_number=mobile,
+        email=body.email or None,
         hashed_password=hash_password(body.password),
         display_name=display_name,
     )
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Mobile number or email already registered.")
     db.refresh(user)
 
     token = create_access_token(user.id)
@@ -50,7 +65,12 @@ def register(body: RegisterRequest, response: Response, db: Session = Depends(ge
 
 @router.post("/login", response_model=UserOut)
 def login(body: LoginRequest, response: Response, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == body.email).first()
+    identifier = body.identifier.strip()
+    if "@" in identifier:
+        user = db.query(User).filter(User.email == identifier).first()
+    else:
+        mobile = normalize_mobile(identifier)
+        user = db.query(User).filter(User.mobile_number == mobile).first()
     if not user or not user.hashed_password or not verify_password(body.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials.")
 

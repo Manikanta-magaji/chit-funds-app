@@ -3,12 +3,12 @@ import type { GroupDetail, GroupSummary, DrawHistoryEntry, InstallmentEntry, Use
 
 // Auth
 export const getMe = () => api.get<User>("/auth/me").then((r) => r.data);
-export const register = (email: string, password: string) =>
-  api.post<User>("/auth/register", { email, password }).then((r) => r.data);
-export const login = (email: string, password: string) =>
-  api.post<User>("/auth/login", { email, password }).then((r) => r.data);
+export const register = (mobile_number: string, password: string, email?: string, display_name?: string) =>
+  api.post<User>("/auth/register", { mobile_number, password, email, display_name }).then((r) => r.data);
+export const login = (identifier: string, password: string) =>
+  api.post<User>("/auth/login", { identifier, password }).then((r) => r.data);
 export const logout = () => api.post("/auth/logout");
-export const updateProfile = (data: { display_name: string; mobile: string; upi_id?: string }) =>
+export const updateProfile = (data: { display_name: string; mobile_number: string; upi_id?: string }) =>
   api.put<User>("/users/me/profile", data).then((r) => r.data);
 
 // Groups
