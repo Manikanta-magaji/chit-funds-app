@@ -9,6 +9,7 @@ interface Props {
   currentCycle: number;
   totalCycles: number;
   isAdmin: boolean;
+  installmentAmount: number;
   slots: Slot[];
   winnerSlotId?: number | null;
   groupCreatedAt: string;
@@ -38,7 +39,7 @@ function fmtDate(iso: string | null) {
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" });
 }
 
-export default function InstallmentPanel({ groupId, currentCycle, totalCycles, isAdmin, slots, winnerSlotId, groupCreatedAt }: Props) {
+export default function InstallmentPanel({ groupId, currentCycle, totalCycles, isAdmin, installmentAmount, slots, winnerSlotId, groupCreatedAt }: Props) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const [viewCycle, setViewCycle] = useState(currentCycle);
@@ -92,6 +93,34 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
   const mySlotIds = slots
     .filter((s: any) => s.linked_user_id === user!.id)
     .map((s: any) => s.id);
+
+  // All positions (primary slots + sub-member entries) belonging to the current user
+  const myPrimaryPositions = slots.filter((s: any) => s.linked_user_id === user!.id);
+  const mySubMemberPositions = slots.flatMap((s: any) =>
+    ((s.sub_members ?? []) as any[])
+      .filter((sm: any) => sm.linked_user_id === user!.id)
+      .map((sm: any) => ({ slotId: s.id, subMemberId: sm.id, splitAmount: sm.split_amount as number }))
+  );
+  const myPositionCount = myPrimaryPositions.length + mySubMemberPositions.length;
+
+  // Total unpaid amount across all of the user's positions for the viewed cycle
+  const myTotalDue = myPositionCount > 1
+    ? (() => {
+        let due = 0;
+        for (const s of myPrimaryPositions) {
+          const inst = installments.find((i: any) => i.slot_id === s.id);
+          if (!inst || inst.status !== "paid") due += installmentAmount;
+        }
+        for (const pos of mySubMemberPositions) {
+          const inst = installments.find((i: any) => i.slot_id === pos.slotId);
+          if (inst) {
+            const smPay = (inst.payments ?? []).find((p: any) => p.sub_member_id === pos.subMemberId);
+            if (!smPay || smPay.status !== "paid") due += pos.splitAmount;
+          }
+        }
+        return due;
+      })()
+    : 0;
 
   const isCurrentCycleView = viewCycle === currentCycle;
   const pendingItems = installments.filter((i: any) => i.status === "pending");
@@ -152,6 +181,16 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Multi-slot summary for the current user */}
+      {!isAdmin && myPositionCount > 1 && (
+        <div className="info-banner">
+          You have {myPositionCount} slots in this group —{" "}
+          {myTotalDue > 0
+            ? <>Total due this cycle: <strong>₹{myTotalDue.toLocaleString()}</strong></>
+            : <strong>All paid for this cycle ✓</strong>}
         </div>
       )}
 

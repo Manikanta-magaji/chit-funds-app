@@ -273,6 +273,43 @@ export default function GroupDashboardPage() {
   const currentCycleHistory = history.find((h) => h.cycle_number === group?.current_cycle);
   const winnerSlotId = currentCycleHistory?.winner_slot?.id ?? null;
 
+  /** Returns true if userId is already linked to any slot or sub-member in the group. */
+  const isUserAlreadyInGroup = (userId: number, excludeSlotId?: number): boolean => {
+    return slots.some((s: any) => {
+      if (excludeSlotId !== undefined && s.id === excludeSlotId) return false;
+      if (s.linked_user_id === userId) return true;
+      return (s.sub_members ?? []).some((sm: any) => sm.linked_user_id === userId);
+    });
+  };
+
+  const handleAddSlot = () => {
+    if (
+      newSlotLinkedUser &&
+      isUserAlreadyInGroup(newSlotLinkedUser.id) &&
+      !window.confirm(
+        `${newSlotLinkedUser.display_name ?? "This user"} is already a contributor in this group. Add them to another slot?`
+      )
+    ) {
+      return;
+    }
+    addSlotMutation.mutate();
+  };
+
+  const saveSubMembersWithCheck = async (slotId: number) => {
+    const duplicates = subDrafts.filter(
+      (d) => d.linked_user_id && isUserAlreadyInGroup(d.linked_user_id, slotId)
+    );
+    if (
+      duplicates.length > 0 &&
+      !window.confirm(
+        `${duplicates.length === 1 ? "One sub-member is" : `${duplicates.length} sub-members are`} already linked elsewhere in this group. Save anyway?`
+      )
+    ) {
+      return;
+    }
+    await saveSubMembers(slotId);
+  };
+
   if (isLoading) return <div className="page-container"><div className="loading">Loading…</div></div>;
   if (!group) return <div className="page-container"><p>Group not found.</p></div>;
 
@@ -350,6 +387,7 @@ export default function GroupDashboardPage() {
         currentCycle={group.current_cycle}
         totalCycles={group.total_cycles}
         isAdmin={isAdmin}
+        installmentAmount={group.installment_amount}
         slots={slots}
         winnerSlotId={winnerSlotId}
         groupCreatedAt={group.created_at}
@@ -392,7 +430,7 @@ export default function GroupDashboardPage() {
             )}
             <div style={{ display: "flex", gap: "8px" }}>
               <button className="btn btn-sm btn-primary"
-                onClick={() => addSlotMutation.mutate()}
+                onClick={() => handleAddSlot()}
                 disabled={!newSlotName.trim() && !newSlotLinkedUser || addSlotMutation.isPending}>
                 Add
               </button>
@@ -554,7 +592,7 @@ export default function GroupDashboardPage() {
                       <div className="btn-group">
                         <button className="btn btn-sm btn-ghost" onClick={() => setExpandedSlotId(null)}>Cancel</button>
                         <button className="btn btn-sm btn-primary" disabled={!splitValid || subSaving}
-                          onClick={() => saveSubMembers(slot.id)}>
+                          onClick={() => saveSubMembersWithCheck(slot.id)}>
                           {subSaving ? "Saving…" : "Save"}
                         </button>
                       </div>

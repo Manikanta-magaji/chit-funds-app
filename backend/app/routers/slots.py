@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from sqlalchemy import exists
 
 from app.core.jwt import require_complete_profile
 from app.db.session import get_db
@@ -36,6 +37,36 @@ def _get_slot_or_404(db: Session, group_id: int, slot_id: int) -> ContributorSlo
     return slot
 
 
+def _user_already_in_group(
+    db: Session,
+    group_id: int,
+    user_id: int,
+    exclude_slot_id: Optional[int] = None,
+) -> bool:
+    """Return True if user_id is linked to any slot (primary or sub-member) in the group,
+    optionally excluding a specific slot (e.g. the one just created)."""
+    slot_q = db.query(ContributorSlot).filter(
+        ContributorSlot.group_id == group_id,
+        ContributorSlot.linked_user_id == user_id,
+    )
+    if exclude_slot_id is not None:
+        slot_q = slot_q.filter(ContributorSlot.id != exclude_slot_id)
+    if slot_q.first():
+        return True
+
+    sm_q = (
+        db.query(SubMember)
+        .join(ContributorSlot, SubMember.slot_id == ContributorSlot.id)
+        .filter(
+            ContributorSlot.group_id == group_id,
+            SubMember.linked_user_id == user_id,
+        )
+    )
+    if exclude_slot_id is not None:
+        sm_q = sm_q.filter(ContributorSlot.id != exclude_slot_id)
+    return sm_q.first() is not None
+
+
 class SlotCreateRequest(BaseModel):
     name: str
     linked_user_id: Optional[int] = None
@@ -63,7 +94,7 @@ class SubMemberLinkRequest(BaseModel):
 # Add contributor slot
 # ---------------------------------------------------------------------------
 
-@router.post("/{group_id}/slots", response_model=SlotOut, status_code=201)
+@router.post("/{group_id}/slots", status_code=201)
 def add_slot(
     group_id: int,
     body: SlotCreateRequest,
@@ -87,7 +118,23 @@ def add_slot(
     db.add(slot)
     db.commit()
     db.refresh(slot)
-    return slot
+
+    duplicate_user_warning = bool(body.linked_user_id) and _user_already_in_group(
+        db, group_id, body.linked_user_id, exclude_slot_id=slot.id
+    )
+    linked_user_display_name = None
+    if slot.linked_user_id and slot.linked_user:
+        linked_user_display_name = slot.linked_user.display_name or slot.linked_user.email
+
+    return {
+        "id": slot.id,
+        "name": slot.name,
+        "is_offline": slot.is_offline,
+        "linked_user_id": slot.linked_user_id,
+        "linked_user_display_name": linked_user_display_name,
+        "sub_members": [],
+        "duplicate_user_warning": duplicate_user_warning,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +215,7 @@ def list_slots(
 # Set sub-member split configuration
 # ---------------------------------------------------------------------------
 
-@router.put("/{group_id}/slots/{slot_id}/sub-members", response_model=SlotOut)
+@router.put("/{group_id}/slots/{slot_id}/sub-members")
 def set_sub_members(
     group_id: int,
     slot_id: int,
@@ -203,7 +250,38 @@ def set_sub_members(
 
     db.commit()
     db.refresh(slot)
-    return slot
+
+    duplicate_user_warning = any(
+        sm_data.linked_user_id and _user_already_in_group(
+            db, group_id, sm_data.linked_user_id, exclude_slot_id=slot.id
+        )
+        for sm_data in body.sub_members
+    )
+    linked_user_display_name = None
+    if slot.linked_user_id and slot.linked_user:
+        linked_user_display_name = slot.linked_user.display_name or slot.linked_user.email
+
+    return {
+        "id": slot.id,
+        "name": slot.name,
+        "is_offline": slot.is_offline,
+        "linked_user_id": slot.linked_user_id,
+        "linked_user_display_name": linked_user_display_name,
+        "sub_members": [
+            {
+                "id": sm.id,
+                "name": sm.name,
+                "linked_user_id": sm.linked_user_id,
+                "linked_user_display_name": (
+                    sm.linked_user.display_name or sm.linked_user.email
+                    if sm.linked_user_id and sm.linked_user else None
+                ),
+                "split_amount": sm.split_amount,
+            }
+            for sm in slot.sub_members
+        ],
+        "duplicate_user_warning": duplicate_user_warning,
+    }
 
 
 # ---------------------------------------------------------------------------
