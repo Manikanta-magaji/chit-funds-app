@@ -32,6 +32,8 @@ env/
 data/
 *.sqlite3
 *.db
+*.db-shm
+*.db-wal
 *.sql
 *.bak
 
