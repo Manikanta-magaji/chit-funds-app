@@ -129,6 +129,29 @@ a:hover { text-decoration: underline; }
 .stat-value { font-size: 1.15rem; font-weight: 700; }
 .stat { display: flex; flex-direction: column; gap: .15rem; }
 
+/* ── Tab Bar ── */
+.tab-bar {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 1.5rem;
+}
+.tab-btn {
+  padding: .6rem 1.1rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  font-size: .9rem;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.tab-btn-active { color: var(--primary); border-bottom-color: var(--primary); }
+
 /* ── Sections ── */
 .section { margin-bottom: 2rem; }
 .section-header {

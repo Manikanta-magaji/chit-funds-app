@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getInstallments, markInstallment, confirmPayment, recordPayout, winnerConfirmPayout } from "../api/endpoints";
+import { getInstallments, markInstallment, confirmPayment } from "../api/endpoints";
 import { useAuth } from "../context/AuthContext";
 import type { Slot } from "../api/types";
 
@@ -13,6 +13,8 @@ interface Props {
   slots: Slot[];
   winnerSlotId?: number | null;
   groupCreatedAt: string;
+  viewCycle: number;
+  onViewCycleChange: (cycle: number) => void;
 }
 
 // Parse year/month directly from ISO string to avoid Date mutation / timezone issues
@@ -39,13 +41,10 @@ function fmtDate(iso: string | null) {
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" });
 }
 
-export default function InstallmentPanel({ groupId, currentCycle, totalCycles, isAdmin, installmentAmount, slots, winnerSlotId, groupCreatedAt }: Props) {
+export default function InstallmentPanel({ groupId, currentCycle, totalCycles, isAdmin, installmentAmount, slots, winnerSlotId, groupCreatedAt, viewCycle, onViewCycleChange }: Props) {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const [viewCycle, setViewCycle] = useState(currentCycle);
   const [expandedSlots, setExpandedSlots] = useState<Set<number>>(new Set());
-
-  useEffect(() => { setViewCycle(currentCycle); }, [currentCycle]);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["installments", groupId, viewCycle] });
@@ -68,18 +67,6 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
     mutationFn: ({ slotId, approve }: { slotId: number; approve: boolean }) =>
       confirmPayment(groupId, viewCycle, slotId, approve),
     onSuccess: invalidate,
-  });
-
-  const payoutMutation = useMutation({
-    mutationFn: () => recordPayout(groupId, currentCycle),
-    onSuccess: invalidate,
-    onError: (err: any) => alert(err.response?.data?.detail || "Failed."),
-  });
-
-  const winnerConfirmMutation = useMutation({
-    mutationFn: () => winnerConfirmPayout(groupId, currentCycle),
-    onSuccess: invalidate,
-    onError: (err: any) => alert(err.response?.data?.detail || "Failed."),
   });
 
   const toggleExpand = (slotId: number) => {
@@ -136,7 +123,7 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
           <select
             id="cycle-select"
             value={viewCycle}
-            onChange={(e) => setViewCycle(Number(e.target.value))}
+            onChange={(e) => onViewCycleChange(Number(e.target.value))}
             className="input-sm"
           >
             {cycles.map((c) => (
@@ -206,7 +193,7 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
                 <th>Status</th>
                 <th>Paid at</th>
                 <th>Confirmed by</th>
-                {isCurrentCycleView && <th>Actions</th>}
+                {(isCurrentCycleView || isAdmin) && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -245,20 +232,20 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
                       <td className="text-muted small">
                         {item.is_self_reported ? <em>Self-reported</em> : item.confirmed_by_name || "—"}
                       </td>
-                      {isCurrentCycleView && (
+                      {(isCurrentCycleView || isAdmin) && (
                         <td>
                           <div className="btn-group">
                             {/* Slot-level actions only for slots without multiple sub-members */}
-                            {!hasSubMembers && (isAdmin || isMySlot) && item.status !== "paid" && !isWinner && (
+                            {!hasSubMembers && (isAdmin || (isCurrentCycleView && isMySlot)) && item.status !== "paid" && !isWinner && (
                               <button
                                 className="btn btn-sm btn-success"
-                                disabled={markMutation.isPending || !winnerSlotId}
-                                title={!winnerSlotId ? "Draw Prize first" : undefined}
+                                disabled={markMutation.isPending || (!isCurrentCycleView ? false : !winnerSlotId)}
+                                title={isCurrentCycleView && !winnerSlotId ? "Draw Prize first" : undefined}
                                 onClick={() => markMutation.mutate({ slotId: item.slot_id, action: "pay" })}>
                                 Mark Paid
                               </button>
                             )}
-                            {!hasSubMembers && (isAdmin || isMySlot) && item.status === "paid" && !isWinner && (
+                            {!hasSubMembers && (isAdmin || (isCurrentCycleView && isMySlot)) && item.status === "paid" && !isWinner && (
                               <button className="btn btn-sm btn-ghost" disabled={markMutation.isPending}
                                 onClick={() => markMutation.mutate({ slotId: item.slot_id, action: "unpay" })}>
                                 Undo
@@ -286,19 +273,19 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
                           </td>
                           <td className="text-muted small">{fmtDate(smPayment?.paid_at ?? null)}</td>
                           <td className="text-muted small">{smPayment?.confirmed_by_name || "—"}</td>
-                          {isCurrentCycleView && (
+                          {(isCurrentCycleView || isAdmin) && (
                             <td>
                               <div className="btn-group">
-                                {(isAdmin || isMySubMember) && smStatus !== "paid" && !isWinner && (
+                                {(isAdmin || (isCurrentCycleView && isMySubMember)) && smStatus !== "paid" && !isWinner && (
                                   <button
                                     className="btn btn-sm btn-success"
-                                    disabled={markMutation.isPending || !winnerSlotId}
-                                    title={!winnerSlotId ? "Draw Prize first" : undefined}
+                                    disabled={markMutation.isPending || (isCurrentCycleView && !winnerSlotId)}
+                                    title={isCurrentCycleView && !winnerSlotId ? "Draw Prize first" : undefined}
                                     onClick={() => markMutation.mutate({ slotId: item.slot_id, action: "pay", subMemberId: sm.id })}>
                                     Mark Paid
                                   </button>
                                 )}
-                                {(isAdmin || isMySubMember) && smStatus === "paid" && !isWinner && (
+                                {(isAdmin || (isCurrentCycleView && isMySubMember)) && smStatus === "paid" && !isWinner && (
                                   <button className="btn btn-sm btn-ghost" disabled={markMutation.isPending}
                                     onClick={() => markMutation.mutate({ slotId: item.slot_id, action: "unpay", subMemberId: sm.id })}>
                                     Undo
@@ -318,23 +305,7 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
         </div>
       )}
 
-      {/* Payout actions — only on current cycle */}
-      {isCurrentCycleView && (
-        <div className="btn-group mt-2">
-          {isAdmin && (
-            <button className="btn btn-secondary" onClick={() => payoutMutation.mutate()}
-              disabled={payoutMutation.isPending}>
-              Mark Payout Sent
-            </button>
-          )}
-          {mySlotIds.some((id) => id === winnerSlotId) && (
-            <button className="btn btn-secondary" onClick={() => winnerConfirmMutation.mutate()}
-              disabled={winnerConfirmMutation.isPending}>
-              Confirm Payout Received
-            </button>
-          )}
-        </div>
-      )}
+
     </div>
   );
 }

@@ -296,10 +296,9 @@ def draw_history(
     current_user: User = Depends(require_complete_profile),
 ):
     cycles = db.query(Cycle).filter(Cycle.group_id == group_id).order_by(Cycle.cycle_number).all()
-    from app.models.models import PayoutRecord
+    from app.models.models import InstallmentPayment, PaymentStatus
     result = []
     for cycle in cycles:
-        payout = db.query(PayoutRecord).filter(PayoutRecord.cycle_id == cycle.id).first()
         winner_slot = None
         if cycle.winner_slot_id:
             ws = db.query(ContributorSlot).filter(ContributorSlot.id == cycle.winner_slot_id).first()
@@ -311,10 +310,31 @@ def draw_history(
                     "upi_id": linked_user.upi_id if linked_user else None,
                     "display_name": linked_user.display_name if linked_user else ws.name,
                 }
+        # Auto-derive payout status: completed when all non-winner slots have paid
+        if cycle.winner_slot_id:
+            non_winner_slots = [
+                s for s in db.query(ContributorSlot).filter(
+                    ContributorSlot.group_id == group_id
+                ).all()
+                if s.id != cycle.winner_slot_id
+            ]
+            def _slot_fully_paid(s):
+                payments = db.query(InstallmentPayment).filter(
+                    InstallmentPayment.cycle_id == cycle.id,
+                    InstallmentPayment.slot_id == s.id,
+                ).all()
+                sub_count = len(s.sub_members)
+                if sub_count > 1:
+                    return sum(1 for p in payments if p.sub_member_id is not None and p.status == PaymentStatus.paid) == sub_count
+                return bool(payments) and all(p.status == PaymentStatus.paid for p in payments)
+            all_paid = bool(non_winner_slots) and all(_slot_fully_paid(s) for s in non_winner_slots)
+            payout_status = "completed" if all_paid else "pending"
+        else:
+            payout_status = None
         result.append({
             "cycle_number": cycle.cycle_number,
             "is_closed": cycle.is_closed,
             "winner_slot": winner_slot,
-            "payout_status": "completed" if payout else "pending",
+            "payout_status": payout_status,
         })
     return result

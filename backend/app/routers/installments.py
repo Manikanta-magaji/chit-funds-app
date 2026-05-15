@@ -159,6 +159,13 @@ def update_installment(
     is_admin = db.query(GroupAdmin).filter(
         GroupAdmin.group_id == group_id, GroupAdmin.user_id == current_user.id
     ).first() is not None
+
+    # For past cycles, only admins may make changes
+    group = db.query(ChitGroup).filter(ChitGroup.id == group_id).first()
+    is_past_cycle = group and cycle_number < group.current_cycle
+    if is_past_cycle and not is_admin:
+        raise HTTPException(status_code=403, detail="Only admins can update installments for past cycles.")
+
     if not is_admin:
         if body.sub_member_id is not None:
             # Must be the specific sub-member being marked
@@ -217,6 +224,11 @@ def self_report_payment(
 ):
     cycle = _get_cycle_or_404(db, group_id, cycle_number)
     slot = _get_slot_or_404(db, group_id, slot_id)
+
+    # Self-report is only allowed on the current cycle
+    group = db.query(ChitGroup).filter(ChitGroup.id == group_id).first()
+    if group and cycle_number != group.current_cycle:
+        raise HTTPException(status_code=403, detail="Self-reporting is only allowed for the current cycle.")
 
     # Verify user is linked to this slot or a sub-member
     if slot.linked_user_id != current_user.id:

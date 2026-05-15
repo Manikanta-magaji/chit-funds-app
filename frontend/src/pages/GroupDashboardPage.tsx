@@ -224,8 +224,14 @@ export default function GroupDashboardPage() {
   const [showDraw, setShowDraw] = useState(false);
   const [showPayModal, setShowPayModal] = useState(false);
 
+  // Viewed cycle — lifted here so it persists across tab switches
+  const [viewCycle, setViewCycle] = useState(0);
+  const prevCurrentCycleRef = useRef(0);
+
+  // Tab navigation state
+  const [activeTab, setActiveTab] = useState<"overview" | "contributors" | "history" | "settings">("overview");
+
   // Settings panel state
-  const [showSettings, setShowSettings] = useState(false);
   const [settingName, setSettingName] = useState("");
   const [settingInstallment, setSettingInstallment] = useState("");
   const [settingCycles, setSettingCycles] = useState("");
@@ -281,6 +287,17 @@ export default function GroupDashboardPage() {
   });
 
   const isAdmin = group?.admin_ids.includes(user!.id) ?? false;
+
+  // Initialise viewCycle once group loads; reset when current_cycle advances
+  useEffect(() => {
+    if (group?.current_cycle && viewCycle === 0) setViewCycle(group.current_cycle);
+  }, [group?.current_cycle]);
+  useEffect(() => {
+    if (group?.current_cycle && group.current_cycle !== prevCurrentCycleRef.current) {
+      prevCurrentCycleRef.current = group.current_cycle;
+      setViewCycle(group.current_cycle);
+    }
+  }, [group?.current_cycle]);
 
   const addSlotMutation = useMutation({
     mutationFn: () => addSlot(groupId, newSlotLinkedUser ? (newSlotLinkedUser.display_name ?? newSlotName.trim()) : newSlotName.trim(), newSlotLinkedUser?.id),
@@ -379,14 +396,18 @@ export default function GroupDashboardPage() {
     }
   };
 
+  // Winner for the cycle currently being viewed in InstallmentPanel
+  const viewCycleHistory = history.find((h) => h.cycle_number === viewCycle);
+  const viewCycleWinnerSlotId = viewCycleHistory?.winner_slot?.id ?? null;
+  // Winner for the actual current cycle — used to gate the Draw Prize button
   const currentCycleHistory = history.find((h) => h.cycle_number === group?.current_cycle);
-  const winnerSlotId = currentCycleHistory?.winner_slot?.id ?? null;
+  const currentCycleWinnerSlotId = currentCycleHistory?.winner_slot?.id ?? null;
 
-  // Read installments from cache (already fetched by InstallmentPanel); no extra network call
+  // Read installments for the selected viewCycle (shared cache with InstallmentPanel)
   const { data: currentInstallments = [], isFetched: installmentsFetched } = useQuery({
-    queryKey: ["installments", groupId, group?.current_cycle ?? 0],
-    queryFn: () => getInstallments(groupId, group!.current_cycle),
-    enabled: !!group,
+    queryKey: ["installments", groupId, viewCycle],
+    queryFn: () => getInstallments(groupId, viewCycle),
+    enabled: !!group && viewCycle > 0,
   });
 
   // Collect all positions (primary slots + sub-member entries) belonging to the current user,
@@ -395,20 +416,20 @@ export default function GroupDashboardPage() {
     .filter((s: any) => s.linked_user_id === user!.id)
     .map((s: any) => s.id as number);
 
-  const iAmTheWinner = mySlotIds.includes(winnerSlotId ?? -1);
+  const iAmTheWinner = mySlotIds.includes(viewCycleWinnerSlotId ?? -1);
 
   const myPayNowPositions: { label: string; amount: number }[] = (() => {
     const positions: { label: string; amount: number }[] = [];
     for (const s of slots as any[]) {
       if (s.linked_user_id !== user!.id) continue;
-      if (s.id === winnerSlotId) continue; // winner slot excluded
+      if (s.id === viewCycleWinnerSlotId) continue; // winner slot excluded
       const inst = (currentInstallments as any[]).find((i) => i.slot_id === s.id);
       if (!inst || inst.status !== "paid") {
         positions.push({ label: s.name, amount: group?.installment_amount ?? 0 });
       }
     }
     for (const s of slots as any[]) {
-      if (s.id === winnerSlotId) continue; // winner slot excluded
+      if (s.id === viewCycleWinnerSlotId) continue; // winner slot excluded
       for (const sm of (s.sub_members ?? []) as any[]) {
         if (sm.linked_user_id !== user!.id) continue;
         const inst = (currentInstallments as any[]).find((i) => i.slot_id === s.id);
@@ -471,7 +492,6 @@ export default function GroupDashboardPage() {
     setSettingInstallment(String(group.installment_amount));
     setSettingCycles(String(group.total_cycles));
     setSettingError("");
-    setShowSettings(true);
   };
 
   const saveSettings = async () => {
@@ -482,12 +502,11 @@ export default function GroupDashboardPage() {
     if (!isNaN(newAmt) && newAmt !== group.installment_amount) patch.installment_amount = newAmt;
     const newCycles = parseInt(settingCycles, 10);
     if (!isNaN(newCycles) && newCycles !== group.total_cycles) patch.total_cycles = newCycles;
-    if (Object.keys(patch).length === 0) { setShowSettings(false); return; }
+    if (Object.keys(patch).length === 0) { return; }
     setSettingSaving(true);
     try {
       await updateGroupSettings(groupId, patch);
       qc.invalidateQueries({ queryKey: ["group", groupId] });
-      setShowSettings(false);
     } catch (err: any) {
       setSettingError(err.response?.data?.detail || "Failed to save settings.");
     } finally {
@@ -507,398 +526,445 @@ export default function GroupDashboardPage() {
           <div className="breadcrumb"><Link to="/groups">My Funds</Link> / {group.name}</div>
           <h2>{group.name}</h2>
         </div>
+      </div>
+
+      {/* Tab Bar (Task 2.2) */}
+      <div className="tab-bar">
+        <button className={`tab-btn${activeTab === "overview" ? " tab-btn-active" : ""}`} onClick={() => setActiveTab("overview")}>Overview</button>
+        <button className={`tab-btn${activeTab === "contributors" ? " tab-btn-active" : ""}`} onClick={() => setActiveTab("contributors")}>Contributors</button>
+        <button className={`tab-btn${activeTab === "history" ? " tab-btn-active" : ""}`} onClick={() => setActiveTab("history")}>History</button>
         {isAdmin && (
-          <div className="btn-group">
-            <button className="btn btn-secondary" onClick={openSettings}>
-              ⚙ Settings
-            </button>
-            <button className="btn btn-secondary" onClick={() => setShowDraw(true)}
-              disabled={!!winnerSlotId}>
-              🎲 Draw Prize
-            </button>
-            <button className="btn btn-secondary" onClick={() => advanceMutation.mutate(false)}
-              disabled={advanceMutation.isPending}>
-              Next Cycle →
-            </button>
+          <button className={`tab-btn${activeTab === "settings" ? " tab-btn-active" : ""}`} onClick={() => { setActiveTab("settings"); openSettings(); }}>Settings</button>
+        )}
+      </div>
+
+      {/* ── Overview Tab (Task 3.1) ── */}
+      {activeTab === "overview" && (
+        <>
+          {/* Admin cycle actions */}
+          {isAdmin && (
+            <div className="btn-group" style={{ marginBottom: "1rem" }}>
+              <button className="btn btn-secondary" onClick={() => setShowDraw(true)}
+                disabled={!!currentCycleWinnerSlotId}>
+                🎲 Draw Prize
+              </button>
+              <button className="btn btn-secondary" onClick={() => advanceMutation.mutate(false)}
+                disabled={advanceMutation.isPending}>
+                Next Cycle →
+              </button>
+            </div>
+          )}
+
+          {/* Stats */}
+          <div className="stats-grid">
+            <div className="stat-card">
+              <span className="stat-label">Monthly Installment</span>
+              <span className="stat-value">₹{group.installment_amount.toLocaleString()}</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Current Cycle</span>
+              <span className="stat-value">{group.current_cycle} / {group.total_cycles}</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Contributors</span>
+              <span className="stat-value">{slots.length} / {group.total_cycles}</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">
+                {viewCycle === group.current_cycle ? "This Month's Winner" : `Cycle ${viewCycle} Winner`}
+              </span>
+              <span className="stat-value">
+                {viewCycleHistory?.winner_slot
+                  ? (
+                    <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "0.4rem" }}>
+                      <span>🏆 {viewCycleHistory.winner_slot.name}</span>
+                      {viewCycle === group.current_cycle && (
+                        iAmTheWinner
+                          ? <span className="text-muted" style={{ fontSize: "0.85rem" }}>You won this cycle 🎉</span>
+                          : installmentsFetched && payNowTotal === 0
+                            ? <span className="text-muted" style={{ fontSize: "0.85rem" }}>✓ All payments cleared</span>
+                            : viewCycleHistory.winner_slot.upi_id
+                              ? (
+                                <button className="btn btn-sm btn-primary" onClick={() => setShowPayModal(true)}>
+                                  💸 Pay Now
+                                </button>
+                              )
+                              : isAdmin && (
+                                <span className="text-muted" style={{ fontSize: "0.78rem" }}>No UPI ID — ask winner to update profile</span>
+                              )
+                      )}
+                    </span>
+                  )
+                  : <span className="text-muted">Not drawn yet</span>}
+              </span>
+            </div>
+          </div>
+
+          {/* Installment Tracking */}
+          <InstallmentPanel
+            groupId={groupId}
+            currentCycle={group.current_cycle}
+            totalCycles={group.total_cycles}
+            isAdmin={isAdmin}
+            installmentAmount={group.installment_amount}
+            slots={slots}
+            winnerSlotId={viewCycleWinnerSlotId}
+            groupCreatedAt={group.created_at}
+            viewCycle={viewCycle}
+            onViewCycleChange={setViewCycle}
+          />
+
+        </>
+      )}
+
+      {/* ── Contributors Tab (Task 4.1) ── */}
+      {activeTab === "contributors" && (
+        <div className="section">
+          <div className="section-header">
+            <h3>Contributors</h3>
+            {isAdmin && (
+              <button className="btn btn-sm btn-secondary" onClick={() => { setAddingSlot(!addingSlot); setNewSlotName(""); setNewSlotLinkedUser(null); setSlotError(""); }}>
+                + Add Contributor
+              </button>
+            )}
+          </div>
+          {addingSlot && (
+            <div className="inline-form" style={{ flexDirection: "column", alignItems: "stretch", gap: "6px" }}>
+              {newSlotLinkedUser ? (
+                <div className="suggestion-selected">
+                  <span className="badge badge-registered">Registered</span>
+                  <span>{newSlotLinkedUser.display_name}</span>
+                  <span className="text-muted">{newSlotLinkedUser.email}</span>
+                  <button className="btn btn-sm btn-ghost" onClick={() => setNewSlotLinkedUser(null)}>✕ Clear</button>
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <input
+                      ref={addInputRef}
+                      type="text"
+                      value={newSlotName}
+                      onChange={(e) => { setNewSlotName(e.target.value); setNewSlotLinkedUser(null); }}
+                      placeholder="Name, email or mobile number"
+                      className="input-sm"
+                      style={{ flex: 1 }}
+                    />
+                  </div>
+                  <UserSuggestion query={newSlotName} onSelect={(u) => { if (u) setNewSlotLinkedUser(u); }} />
+                </>
+              )}
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button className="btn btn-sm btn-primary"
+                  onClick={() => handleAddSlot()}
+                  disabled={!newSlotName.trim() && !newSlotLinkedUser || addSlotMutation.isPending}>
+                  Add
+                </button>
+                <button className="btn btn-sm btn-ghost" onClick={() => { setAddingSlot(false); setSlotError(""); setNewSlotName(""); setNewSlotLinkedUser(null); }}>
+                  Cancel
+                </button>
+              </div>
+              {slotError && <p className="form-error">{slotError}</p>}
+            </div>
+          )}
+          <div className="contributor-list">
+            {slots.map((slot: any) => {
+              const isWinnerSlot = slot.id === currentCycleWinnerSlotId;
+              const isExpanded = expandedSlotId === slot.id;
+              const isRegistered = !!slot.linked_user_id;
+              return (
+                <div key={slot.id} className={`contributor-block${isWinnerSlot ? " contributor-block-winner" : ""}`}>
+                  {/* Main row */}
+                  <div className="contributor-row">
+                    <div className="contributor-info">
+                      <span className="contributor-name">{slot.name}</span>
+                      {isWinnerSlot && <span className="badge badge-winner">🏆 Winner</span>}
+                      {isRegistered ? (
+                        <span className="badge badge-registered" title={slot.linked_user_display_name ?? undefined}>Registered</span>
+                      ) : (
+                        <span className="badge badge-offline">Unregistered</span>
+                      )}
+                      {slot.sub_members?.length > 1 && (
+                        <span className="badge badge-split">{slot.sub_members.length} sub-members</span>
+                      )}
+                    </div>
+                    <div className="contributor-actions">
+                      <span className={`payment-chip payment-chip-${slot.current_cycle_payment_status || "unpaid"}`}>
+                        {slot.current_cycle_payment_status === "partial"
+                          ? "partially paid"
+                          : slot.current_cycle_payment_status || "unpaid"}
+                      </span>
+                      {isAdmin && !isRegistered && (
+                        <LinkAccountButton
+                          label="Link Account"
+                          onLink={(u) => setLinkConfirm({ type: "slot", slotId: slot.id, targetName: slot.name, user: u })}
+                        />
+                      )}
+                      {isAdmin && (
+                        <button className="btn btn-sm btn-ghost"
+                          onClick={() => isExpanded ? setExpandedSlotId(null) : openSubMembers(slot)}>
+                          {isExpanded ? "Close" : "Sub-members"}
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button
+                          className="btn btn-sm btn-ghost"
+                          style={{ color: "var(--danger)" }}
+                          onClick={() => {
+                            if (window.confirm(`Remove "${slot.name}"?`)) removeSlotMutation.mutate(slot.id);
+                          }}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Sub-member editor */}
+                  {isExpanded && isAdmin && (
+                    <div className="sub-member-editor">
+                      <div className="sub-member-header">
+                        <span className="sub-header-label">Sub-member splits (must total ₹{installmentTotal.toLocaleString()})</span>
+                        <button className="btn btn-sm btn-ghost"
+                          onClick={() => setSubDrafts([...subDrafts, { name: "", split_amount: "" }])}>
+                          + Add
+                        </button>
+                      </div>
+                      {slot.sub_members?.length > 0 && (
+                        <div className="sub-member-existing">
+                          {slot.sub_members.map((sm: any) => (
+                            <div key={sm.id} className="sub-member-row" style={{ alignItems: "center" }}>
+                              <span style={{ flex: 2 }}>{sm.name}</span>
+                              <div style={{ width: "110px", flexShrink: 0, display: "flex", alignItems: "center", gap: "4px" }}>
+                                {sm.linked_user_id ? (
+                                  <span className="badge badge-registered" title={sm.linked_user_display_name ?? undefined}>Registered</span>
+                                ) : (
+                                  <>
+                                    <span className="badge badge-offline">Unregistered</span>
+                                    <LinkAccountButton
+                                      label="Link"
+                                      onLink={(u) => setLinkConfirm({ type: "sub-member", slotId: slot.id, subMemberId: sm.id, targetName: sm.name, user: u })}
+                                    />
+                                  </>
+                                )}
+                              </div>
+                              <span className="text-muted" style={{ flex: 1, textAlign: "right" }}>₹{sm.split_amount.toLocaleString()}</span>
+                            </div>
+                          ))}
+                          <hr style={{ margin: "8px 0", borderColor: "var(--border)" }} />
+                        </div>
+                      )}
+                      <p className="text-muted" style={{ fontSize: "0.8rem", marginBottom: "6px" }}>Edit splits below (replaces all sub-members):</p>
+                      {subDrafts.map((draft, i) => (
+                        <div key={i} className="sub-member-row">
+                          <div style={{ position: "relative", flex: 2, minWidth: 0 }}>
+                            <input
+                              className="input-sm"
+                              style={{ width: "100%" }}
+                              type="text"
+                              placeholder="Name, email or mobile"
+                              value={draft.name}
+                              onChange={(e) => {
+                                const updated = [...subDrafts];
+                                updated[i] = { ...updated[i], name: e.target.value, linked_user_id: undefined };
+                                setSubDrafts(updated);
+                              }}
+                            />
+                            {!draft.linked_user_id && (
+                              <SubMemberSuggestion
+                                query={draft.name}
+                                onSelect={(u) => {
+                                  const updated = [...subDrafts];
+                                  updated[i] = { ...updated[i], name: u.display_name ?? draft.name, linked_user_id: u.id };
+                                  setSubDrafts(updated);
+                                }}
+                              />
+                            )}
+                          </div>
+                          <div style={{ width: "110px", flexShrink: 0 }}>
+                            {draft.linked_user_id ? (
+                              <span className="badge badge-registered">Registered</span>
+                            ) : (
+                              <span className="badge badge-offline" style={{ opacity: 0.6 }}>Unregistered</span>
+                            )}
+                          </div>
+                          <input
+                            className="input-sm"
+                            style={{ flex: 1 }}
+                            type="number"
+                            min="0"
+                            placeholder="Amount"
+                            value={draft.split_amount}
+                            onChange={(e) => {
+                              const updated = [...subDrafts];
+                              updated[i] = { ...updated[i], split_amount: e.target.value };
+                              setSubDrafts(updated);
+                            }}
+                          />
+                          {subDrafts.length > 1 && (
+                            <button className="btn btn-sm btn-ghost" style={{ color: "var(--danger)" }}
+                              onClick={() => setSubDrafts(subDrafts.filter((_, j) => j !== i))}>
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <div className="sub-member-footer">
+                        <span className={`split-total ${splitValid ? "split-ok" : "split-bad"}`}>
+                          Total: ₹{splitTotal.toLocaleString()} / ₹{installmentTotal.toLocaleString()}
+                          {splitValid ? " ✓" : " ✗"}
+                        </span>
+                        {subError && <p className="form-error">{subError}</p>}
+                        <div className="btn-group">
+                          <button className="btn btn-sm btn-ghost" onClick={() => setExpandedSlotId(null)}>Cancel</button>
+                          <button className="btn btn-sm btn-primary" disabled={!splitValid || subSaving}
+                            onClick={() => saveSubMembersWithCheck(slot.id)}>
+                            {subSaving ? "Saving…" : "Save"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── History Tab (Tasks 5.1, 5.2) ── */}
+      {activeTab === "history" && (
+        <>
+          {isAdmin && (
+            <div className="section-header" style={{ marginBottom: "1rem" }}>
+              <div className="btn-group">
+                <button className="btn btn-secondary" onClick={() => setShowDraw(true)}
+                  disabled={!!currentCycleWinnerSlotId}>
+                  🎲 Draw Prize
+                </button>
+                <button className="btn btn-secondary" onClick={() => advanceMutation.mutate(false)}
+                  disabled={advanceMutation.isPending}>
+                  Next Cycle →
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="section">
+            <h3>Prize History</h3>
+            <div className="table-wrapper">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Month</th>
+                    <th>Winner</th>
+                    <th>Payout</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.filter((h) => h.winner_slot).map((h) => {
+                    const d = new Date(group.created_at);
+                    d.setMonth(d.getMonth() + h.cycle_number - 1);
+                    const monthLabel = d.toLocaleDateString("en-IN", { year: "numeric", month: "short" });
+                    return (
+                      <tr key={h.cycle_number}>
+                        <td>{monthLabel}</td>
+                        <td>
+                          <span>🏆 {h.winner_slot!.name}</span>
+                        </td>
+                        <td>
+                          {h.payout_status ? (
+                            <span className={`badge ${h.payout_status === "completed" ? "badge-success" : "badge-warning"}`}>
+                              {h.payout_status}
+                            </span>
+                          ) : <span className="text-muted">—</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {history.filter((h) => h.winner_slot).length === 0 && (
+                    <tr><td colSpan={3} className="text-muted" style={{ textAlign: "center" }}>No draws yet</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Settings Tab (Tasks 6.1, 6.3) — admin only ── */}
+      {activeTab === "settings" && isAdmin && (
+        <>
+          {/* Fund Settings */}
+          <div className="section">
+            <div className="section-header">
+              <h3>Fund Settings</h3>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem", maxWidth: "420px" }}>
+              <div className="form-group">
+                <label>Fund Name</label>
+                <input
+                  value={settingName}
+                  onChange={(e) => setSettingName(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>
+                  Monthly Installment (₹)
+                  {winnerDeclared && <span className="hint"> — locked after first draw 🔒</span>}
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={settingInstallment}
+                  onChange={(e) => setSettingInstallment(e.target.value)}
+                  disabled={winnerDeclared}
+                />
+              </div>
+              <div className="form-group">
+                <label>
+                  Total Cycles
+                  {winnerDeclared && <span className="hint"> — locked after first draw 🔒</span>}
+                </label>
+                <input
+                  type="number"
+                  min={slots.length}
+                  value={settingCycles}
+                  onChange={(e) => setSettingCycles(e.target.value)}
+                  disabled={winnerDeclared}
+                />
+              </div>
+              {settingError && <p className="form-error">{settingError}</p>}
+              <div className="btn-group">
+                <button className="btn btn-primary" onClick={saveSettings} disabled={settingSaving}>
+                  {settingSaving ? "Saving…" : "Save Changes"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Admin Management */}
+          <AdminManagementSection
+            groupId={groupId}
+            adminIds={group.admin_ids}
+            createdBy={group.created_by}
+            slots={slots}
+            currentUserId={user!.id}
+            onChanged={() => qc.invalidateQueries({ queryKey: ["group", groupId] })}
+          />
+
+          {/* Danger Zone — Delete Fund (Task 6.3) */}
+          <div className="section">
+            <div className="section-header">
+              <h3>Danger Zone</h3>
+            </div>
             <button className="btn btn-danger" onClick={handleDeleteGroup}
               disabled={deleteGroupMutation.isPending}>
               🗑 Delete Fund
             </button>
           </div>
-        )}
-      </div>
-
-      {/* Stats */}
-      <div className="stats-grid">
-        <div className="stat-card">
-          <span className="stat-label">Monthly Installment</span>
-          <span className="stat-value">₹{group.installment_amount.toLocaleString()}</span>
-        </div>
-        <div className="stat-card">
-          <span className="stat-label">Current Cycle</span>
-          <span className="stat-value">{group.current_cycle} / {group.total_cycles}</span>
-        </div>
-        <div className="stat-card">
-          <span className="stat-label">Contributors</span>
-          <span className="stat-value">{slots.length} / {group.total_cycles}</span>
-        </div>
-        <div className="stat-card">
-          <span className="stat-label">This Month's Winner</span>
-          <span className="stat-value">
-            {currentCycleHistory?.winner_slot
-              ? (
-                <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "0.4rem" }}>
-                  <span>🏆 {currentCycleHistory.winner_slot.name}</span>
-                  {iAmTheWinner
-                    ? <span className="text-muted" style={{ fontSize: "0.85rem" }}>You won this cycle 🎉</span>
-                    : installmentsFetched && payNowTotal === 0
-                      ? <span className="text-muted" style={{ fontSize: "0.85rem" }}>✓ All payments cleared</span>
-                      : currentCycleHistory.winner_slot.upi_id
-                        ? (
-                          <button className="btn btn-sm btn-primary" onClick={() => setShowPayModal(true)}>
-                            💸 Pay Now
-                          </button>
-                        )
-                        : isAdmin && (
-                          <span className="text-muted" style={{ fontSize: "0.78rem" }}>No UPI ID — ask winner to update profile</span>
-                        )
-                  }
-                </span>
-              )
-              : <span className="text-muted">Not drawn yet</span>}
-          </span>
-        </div>
-      </div>
-
-      {/* Fund Settings (admin only) */}
-      {isAdmin && showSettings && (
-        <div className="section">
-          <div className="section-header">
-            <h3>Fund Settings</h3>
-            <button className="btn btn-sm btn-ghost" onClick={() => setShowSettings(false)}>✕ Close</button>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "1rem", maxWidth: "420px" }}>
-            <div className="form-group">
-              <label>Fund Name</label>
-              <input
-                value={settingName}
-                onChange={(e) => setSettingName(e.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label>
-                Monthly Installment (₹)
-                {winnerDeclared && <span className="hint"> — locked after first draw 🔒</span>}
-              </label>
-              <input
-                type="number"
-                min="1"
-                value={settingInstallment}
-                onChange={(e) => setSettingInstallment(e.target.value)}
-                disabled={winnerDeclared}
-              />
-            </div>
-            <div className="form-group">
-              <label>
-                Total Cycles
-                {winnerDeclared && <span className="hint"> — locked after first draw 🔒</span>}
-              </label>
-              <input
-                type="number"
-                min={slots.length}
-                value={settingCycles}
-                onChange={(e) => setSettingCycles(e.target.value)}
-                disabled={winnerDeclared}
-              />
-            </div>
-            {settingError && <p className="form-error">{settingError}</p>}
-            <div className="btn-group">
-              <button className="btn btn-ghost" onClick={() => setShowSettings(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveSettings} disabled={settingSaving}>
-                {settingSaving ? "Saving…" : "Save Changes"}
-              </button>
-            </div>
-          </div>
-        </div>
+        </>
       )}
 
-      {/* Installment Tracking */}
-      <InstallmentPanel
-        groupId={groupId}
-        currentCycle={group.current_cycle}
-        totalCycles={group.total_cycles}
-        isAdmin={isAdmin}
-        installmentAmount={group.installment_amount}
-        slots={slots}
-        winnerSlotId={winnerSlotId}
-        groupCreatedAt={group.created_at}
-      />
-
-      {/* Contributors */}
-      <div className="section">
-        <div className="section-header">
-          <h3>Contributors</h3>
-          {isAdmin && (
-            <button className="btn btn-sm btn-secondary" onClick={() => { setAddingSlot(!addingSlot); setNewSlotName(""); setNewSlotLinkedUser(null); setSlotError(""); }}>
-              + Add Contributor
-            </button>
-          )}
-        </div>
-        {addingSlot && (
-          <div className="inline-form" style={{ flexDirection: "column", alignItems: "stretch", gap: "6px" }}>
-            {newSlotLinkedUser ? (
-              <div className="suggestion-selected">
-                <span className="badge badge-registered">Registered</span>
-                <span>{newSlotLinkedUser.display_name}</span>
-                <span className="text-muted">{newSlotLinkedUser.email}</span>
-                <button className="btn btn-sm btn-ghost" onClick={() => setNewSlotLinkedUser(null)}>✕ Clear</button>
-              </div>
-            ) : (
-              <>
-                <div style={{ display: "flex", gap: "8px" }}>
-                  <input
-                    ref={addInputRef}
-                    type="text"
-                    value={newSlotName}
-                    onChange={(e) => { setNewSlotName(e.target.value); setNewSlotLinkedUser(null); }}
-                    placeholder="Name, email or mobile number"
-                    className="input-sm"
-                    style={{ flex: 1 }}
-                  />
-                </div>
-                <UserSuggestion query={newSlotName} onSelect={(u) => { if (u) setNewSlotLinkedUser(u); }} />
-              </>
-            )}
-            <div style={{ display: "flex", gap: "8px" }}>
-              <button className="btn btn-sm btn-primary"
-                onClick={() => handleAddSlot()}
-                disabled={!newSlotName.trim() && !newSlotLinkedUser || addSlotMutation.isPending}>
-                Add
-              </button>
-              <button className="btn btn-sm btn-ghost" onClick={() => { setAddingSlot(false); setSlotError(""); setNewSlotName(""); setNewSlotLinkedUser(null); }}>
-                Cancel
-              </button>
-            </div>
-            {slotError && <p className="form-error">{slotError}</p>}
-          </div>
-        )}
-        <div className="contributor-list">
-          {slots.map((slot: any) => {
-            const isWinnerSlot = slot.id === winnerSlotId;
-            const isExpanded = expandedSlotId === slot.id;
-            const isRegistered = !!slot.linked_user_id;
-            return (
-              <div key={slot.id} className={`contributor-block${isWinnerSlot ? " contributor-block-winner" : ""}`}>
-                {/* Main row */}
-                <div className="contributor-row">
-                  <div className="contributor-info">
-                    <span className="contributor-name">{slot.name}</span>
-                    {isWinnerSlot && <span className="badge badge-winner">🏆 Winner</span>}
-                    {isRegistered ? (
-                      <span className="badge badge-registered" title={slot.linked_user_display_name ?? undefined}>Registered</span>
-                    ) : (
-                      <span className="badge badge-offline">Unregistered</span>
-                    )}
-                    {slot.sub_members?.length > 1 && (
-                      <span className="badge badge-split">{slot.sub_members.length} sub-members</span>
-                    )}
-                  </div>
-                  <div className="contributor-actions">
-                    <span className={`payment-chip payment-chip-${slot.current_cycle_payment_status || "unpaid"}`}>
-                      {slot.current_cycle_payment_status === "partial"
-                        ? "partially paid"
-                        : slot.current_cycle_payment_status || "unpaid"}
-                    </span>
-                    {isAdmin && !isRegistered && (
-                      <LinkAccountButton
-                        label="Link Account"
-                        onLink={(u) => setLinkConfirm({ type: "slot", slotId: slot.id, targetName: slot.name, user: u })}
-                      />
-                    )}
-                    {isAdmin && (
-                      <button className="btn btn-sm btn-ghost"
-                        onClick={() => isExpanded ? setExpandedSlotId(null) : openSubMembers(slot)}>
-                        {isExpanded ? "Close" : "Sub-members"}
-                      </button>
-                    )}
-                    {isAdmin && (
-                      <button
-                        className="btn btn-sm btn-ghost"
-                        style={{ color: "var(--danger)" }}
-                        onClick={() => {
-                          if (window.confirm(`Remove "${slot.name}"?`)) removeSlotMutation.mutate(slot.id);
-                        }}
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Sub-member editor */}
-                {isExpanded && isAdmin && (
-                  <div className="sub-member-editor">
-                    <div className="sub-member-header">
-                      <span className="sub-header-label">Sub-member splits (must total ₹{installmentTotal.toLocaleString()})</span>
-                      <button className="btn btn-sm btn-ghost"
-                        onClick={() => setSubDrafts([...subDrafts, { name: "", split_amount: "" }])}>
-                        + Add
-                      </button>
-                    </div>
-                    {slot.sub_members?.length > 0 && (
-                      <div className="sub-member-existing">
-                        {slot.sub_members.map((sm: any) => (
-                          <div key={sm.id} className="sub-member-row" style={{ alignItems: "center" }}>
-                            <span style={{ flex: 2 }}>{sm.name}</span>
-                            <div style={{ width: "110px", flexShrink: 0, display: "flex", alignItems: "center", gap: "4px" }}>
-                              {sm.linked_user_id ? (
-                                <span className="badge badge-registered" title={sm.linked_user_display_name ?? undefined}>Registered</span>
-                              ) : (
-                                <>
-                                  <span className="badge badge-offline">Unregistered</span>
-                                  <LinkAccountButton
-                                    label="Link"
-                                    onLink={(u) => setLinkConfirm({ type: "sub-member", slotId: slot.id, subMemberId: sm.id, targetName: sm.name, user: u })}
-                                  />
-                                </>
-                              )}
-                            </div>
-                            <span className="text-muted" style={{ flex: 1, textAlign: "right" }}>₹{sm.split_amount.toLocaleString()}</span>
-                          </div>
-                        ))}
-                        <hr style={{ margin: "8px 0", borderColor: "var(--border)" }} />
-                      </div>
-                    )}
-                    <p className="text-muted" style={{ fontSize: "0.8rem", marginBottom: "6px" }}>Edit splits below (replaces all sub-members):</p>
-                    {subDrafts.map((draft, i) => (
-                      <div key={i} className="sub-member-row">
-                        <div style={{ position: "relative", flex: 2, minWidth: 0 }}>
-                          <input
-                            className="input-sm"
-                            style={{ width: "100%" }}
-                            type="text"
-                            placeholder="Name, email or mobile"
-                            value={draft.name}
-                            onChange={(e) => {
-                              const updated = [...subDrafts];
-                              updated[i] = { ...updated[i], name: e.target.value, linked_user_id: undefined };
-                              setSubDrafts(updated);
-                            }}
-                          />
-                          {!draft.linked_user_id && (
-                            <SubMemberSuggestion
-                              query={draft.name}
-                              onSelect={(u) => {
-                                const updated = [...subDrafts];
-                                updated[i] = { ...updated[i], name: u.display_name ?? draft.name, linked_user_id: u.id };
-                                setSubDrafts(updated);
-                              }}
-                            />
-                          )}
-                        </div>
-                        <div style={{ width: "110px", flexShrink: 0 }}>
-                          {draft.linked_user_id ? (
-                            <span className="badge badge-registered">Registered</span>
-                          ) : (
-                            <span className="badge badge-offline" style={{ opacity: 0.6 }}>Unregistered</span>
-                          )}
-                        </div>
-                        <input
-                          className="input-sm"
-                          style={{ flex: 1 }}
-                          type="number"
-                          min="0"
-                          placeholder="Amount"
-                          value={draft.split_amount}
-                          onChange={(e) => {
-                            const updated = [...subDrafts];
-                            updated[i] = { ...updated[i], split_amount: e.target.value };
-                            setSubDrafts(updated);
-                          }}
-                        />
-                        {subDrafts.length > 1 && (
-                          <button className="btn btn-sm btn-ghost" style={{ color: "var(--danger)" }}
-                            onClick={() => setSubDrafts(subDrafts.filter((_, j) => j !== i))}>
-                            ✕
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    <div className="sub-member-footer">
-                      <span className={`split-total ${splitValid ? "split-ok" : "split-bad"}`}>
-                        Total: ₹{splitTotal.toLocaleString()} / ₹{installmentTotal.toLocaleString()}
-                        {splitValid ? " ✓" : " ✗"}
-                      </span>
-                      {subError && <p className="form-error">{subError}</p>}
-                      <div className="btn-group">
-                        <button className="btn btn-sm btn-ghost" onClick={() => setExpandedSlotId(null)}>Cancel</button>
-                        <button className="btn btn-sm btn-primary" disabled={!splitValid || subSaving}
-                          onClick={() => saveSubMembersWithCheck(slot.id)}>
-                          {subSaving ? "Saving…" : "Save"}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Admin Management (admin only) */}
-      {isAdmin && (
-        <AdminManagementSection
-          groupId={groupId}
-          adminIds={group.admin_ids}
-          createdBy={group.created_by}
-          slots={slots}
-          currentUserId={user!.id}
-          onChanged={() => qc.invalidateQueries({ queryKey: ["group", groupId] })}
-        />
-      )}
-
-      {/* Prize History */}
-      <div className="section">
-        <h3>Prize History</h3>
-        <div className="table-wrapper">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Month</th>
-                <th>Winner</th>
-                <th>Payout</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.filter((h) => h.winner_slot).map((h) => {
-                const d = new Date(group.created_at);
-                d.setMonth(d.getMonth() + h.cycle_number - 1);
-                const monthLabel = d.toLocaleDateString("en-IN", { year: "numeric", month: "short" });
-                return (
-                  <tr key={h.cycle_number}>
-                    <td>{monthLabel}</td>
-                    <td>
-                      <span>🏆 {h.winner_slot!.name}</span>
-                    </td>
-                    <td>
-                      {h.payout_status ? (
-                        <span className={`badge ${h.payout_status === "completed" ? "badge-success" : "badge-warning"}`}>
-                          {h.payout_status}
-                        </span>
-                      ) : <span className="text-muted">—</span>}
-                    </td>
-                  </tr>
-                );
-              })}
-              {history.filter((h) => h.winner_slot).length === 0 && (
-                <tr><td colSpan={3} className="text-muted" style={{textAlign:"center"}}>No draws yet</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
+      {/* Modals — always rendered outside tabs (Task 7.2) */}
       {showDraw && (
         <DrawModal
           groupId={groupId}
@@ -958,3 +1024,4 @@ export default function GroupDashboardPage() {
     </div>
   );
 }
+
