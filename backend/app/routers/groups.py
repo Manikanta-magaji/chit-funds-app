@@ -5,7 +5,7 @@ from typing import List
 from app.core.jwt import require_complete_profile
 from app.db.session import get_db
 from app.models.models import ChitGroup, ContributorSlot, Cycle, GroupAdmin, SubMember, User
-from app.schemas.groups import AdminIn, GroupCreateRequest, GroupOut, GroupSummary
+from app.schemas.groups import AdminIn, GroupCreateRequest, GroupOut, GroupSummary, GroupUpdateRequest
 
 router = APIRouter()
 
@@ -117,6 +117,52 @@ def get_group(
 ):
     group = _get_group_or_404(db, group_id)
     _assert_member(db, group, current_user.id)
+    return _group_to_out(group)
+
+
+# ---------------------------------------------------------------------------
+# Update group settings
+# ---------------------------------------------------------------------------
+
+@router.patch("/{group_id}", response_model=GroupOut)
+def update_group(
+    group_id: int,
+    body: GroupUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_complete_profile),
+):
+    group = _get_group_or_404(db, group_id)
+    _require_admin(db, group_id, current_user.id)
+
+    financial_change = body.installment_amount is not None or body.total_cycles is not None
+    if financial_change:
+        has_winner = db.query(Cycle).filter(
+            Cycle.group_id == group_id,
+            Cycle.winner_slot_id.isnot(None),
+        ).first()
+        if has_winner:
+            raise HTTPException(
+                status_code=409,
+                detail="Installment amount and cycle count cannot be changed after the first winner has been declared.",
+            )
+
+    if body.total_cycles is not None:
+        slot_count = db.query(ContributorSlot).filter(ContributorSlot.group_id == group_id).count()
+        if body.total_cycles < slot_count:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Total cycles cannot be less than the current number of contributor slots ({slot_count}).",
+            )
+
+    if body.name is not None:
+        group.name = body.name
+    if body.installment_amount is not None:
+        group.installment_amount = body.installment_amount
+    if body.total_cycles is not None:
+        group.total_cycles = body.total_cycles
+
+    db.commit()
+    db.refresh(group)
     return _group_to_out(group)
 
 

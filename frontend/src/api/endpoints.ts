@@ -22,6 +22,10 @@ export const createGroup = (data: {
 }) => api.post<GroupDetail>("/groups", data).then((r) => r.data);
 export const deleteGroup = (groupId: number) =>
   api.delete(`/groups/${groupId}`).then((r) => r.data);
+export const updateGroupSettings = (
+  groupId: number,
+  data: { name?: string; installment_amount?: number; total_cycles?: number },
+) => api.patch<GroupDetail>(`/groups/${groupId}`, data).then((r) => r.data);
 export const grantAdmin = (groupId: number, userId: number) =>
   api.post(`/groups/${groupId}/admins`, { user_id: userId }).then((r) => r.data);
 export const revokeAdmin = (groupId: number, userId: number) =>

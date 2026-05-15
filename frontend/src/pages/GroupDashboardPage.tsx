@@ -13,7 +13,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getGroup, listSlots, getDrawHistory, addSlot, removeSlot, advanceCycle,
   setSubMembers, searchUsers, linkSlotToUser, linkSubMemberToUser, deleteGroup,
-  getInstallments,
+  getInstallments, updateGroupSettings, grantAdmin, revokeAdmin,
 } from "../api/endpoints";
 import { useAuth } from "../context/AuthContext";
 import DrawModal from "../components/DrawModal";
@@ -115,6 +115,106 @@ function LinkAccountButton({ label, onLink }: { label: string; onLink: (u: User)
   );
 }
 
+function AdminManagementSection({
+  groupId,
+  adminIds,
+  createdBy,
+  slots,
+  currentUserId,
+  onChanged,
+}: {
+  groupId: number;
+  adminIds: number[];
+  createdBy: number;
+  slots: any[];
+  currentUserId: number;
+  onChanged: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
+
+  // Build a name map from slot linked users for display
+  const nameMap: Record<number, string> = {};
+  for (const s of slots) {
+    if (s.linked_user_id) nameMap[s.linked_user_id] = s.name;
+    for (const sm of s.sub_members ?? []) {
+      if (sm.linked_user_id) nameMap[sm.linked_user_id] = sm.name;
+    }
+  }
+
+  const handleGrant = async (u: User) => {
+    setError("");
+    setPending(true);
+    try {
+      await grantAdmin(groupId, u.id);
+      onChanged();
+      setQuery("");
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Failed to grant admin.");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const handleRevoke = async (userId: number) => {
+    setError("");
+    try {
+      await revokeAdmin(groupId, userId);
+      onChanged();
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Failed to revoke admin.");
+    }
+  };
+
+  return (
+    <div className="section">
+      <div className="section-header">
+        <h3>Admins</h3>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxWidth: "480px" }}>
+        {adminIds.map((uid) => (
+          <div key={uid} className="slot-row" style={{ padding: "8px 12px" }}>
+            <span style={{ flex: 1 }}>
+              {nameMap[uid] ?? (uid === currentUserId ? "You" : `User #${uid}`)}
+              {uid === createdBy && <span className="badge badge-registered" style={{ marginLeft: "6px" }}>Creator</span>}
+            </span>
+            {adminIds.length > 1 && (
+              <button
+                className="btn btn-sm btn-ghost"
+                style={{ color: "var(--danger)" }}
+                onClick={() => handleRevoke(uid)}
+              >
+                Revoke
+              </button>
+            )}
+          </div>
+        ))}
+        <div style={{ marginTop: "8px" }}>
+          <p className="text-muted" style={{ fontSize: "0.85rem", marginBottom: "4px" }}>Add admin (search by name, email, or mobile):</p>
+          <div style={{ position: "relative" }}>
+            <input
+              className="input-sm"
+              placeholder="Search user…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              disabled={pending}
+              style={{ width: "100%" }}
+            />
+            <UserSuggestion
+              query={query}
+              onSelect={(u) => {
+                if (u) handleGrant(u);
+              }}
+            />
+          </div>
+          {error && <p className="form-error" style={{ marginTop: "4px" }}>{error}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function GroupDashboardPage() {
   const { id } = useParams<{ id: string }>();
   const groupId = Number(id);
@@ -123,6 +223,14 @@ export default function GroupDashboardPage() {
   const navigate = useNavigate();
   const [showDraw, setShowDraw] = useState(false);
   const [showPayModal, setShowPayModal] = useState(false);
+
+  // Settings panel state
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingName, setSettingName] = useState("");
+  const [settingInstallment, setSettingInstallment] = useState("");
+  const [settingCycles, setSettingCycles] = useState("");
+  const [settingError, setSettingError] = useState("");
+  const [settingSaving, setSettingSaving] = useState(false);
 
   const deleteGroupMutation = useMutation({
     mutationFn: () => deleteGroup(groupId),
@@ -356,6 +464,37 @@ export default function GroupDashboardPage() {
   if (isLoading) return <div className="page-container"><div className="loading">Loading…</div></div>;
   if (!group) return <div className="page-container"><p>Group not found.</p></div>;
 
+  const winnerDeclared = history.some((h) => h.winner_slot != null);
+
+  const openSettings = () => {
+    setSettingName(group.name);
+    setSettingInstallment(String(group.installment_amount));
+    setSettingCycles(String(group.total_cycles));
+    setSettingError("");
+    setShowSettings(true);
+  };
+
+  const saveSettings = async () => {
+    setSettingError("");
+    const patch: { name?: string; installment_amount?: number; total_cycles?: number } = {};
+    if (settingName.trim() && settingName.trim() !== group.name) patch.name = settingName.trim();
+    const newAmt = parseFloat(settingInstallment);
+    if (!isNaN(newAmt) && newAmt !== group.installment_amount) patch.installment_amount = newAmt;
+    const newCycles = parseInt(settingCycles, 10);
+    if (!isNaN(newCycles) && newCycles !== group.total_cycles) patch.total_cycles = newCycles;
+    if (Object.keys(patch).length === 0) { setShowSettings(false); return; }
+    setSettingSaving(true);
+    try {
+      await updateGroupSettings(groupId, patch);
+      qc.invalidateQueries({ queryKey: ["group", groupId] });
+      setShowSettings(false);
+    } catch (err: any) {
+      setSettingError(err.response?.data?.detail || "Failed to save settings.");
+    } finally {
+      setSettingSaving(false);
+    }
+  };
+
   const installmentTotal = group.installment_amount;
   const splitTotal = subDrafts.reduce((s, d) => s + parseFloat(d.split_amount || "0"), 0);
   const splitValid = Math.abs(splitTotal - installmentTotal) < 0.01;
@@ -370,6 +509,9 @@ export default function GroupDashboardPage() {
         </div>
         {isAdmin && (
           <div className="btn-group">
+            <button className="btn btn-secondary" onClick={openSettings}>
+              ⚙ Settings
+            </button>
             <button className="btn btn-secondary" onClick={() => setShowDraw(true)}
               disabled={!!winnerSlotId}>
               🎲 Draw Prize
@@ -427,6 +569,58 @@ export default function GroupDashboardPage() {
           </span>
         </div>
       </div>
+
+      {/* Fund Settings (admin only) */}
+      {isAdmin && showSettings && (
+        <div className="section">
+          <div className="section-header">
+            <h3>Fund Settings</h3>
+            <button className="btn btn-sm btn-ghost" onClick={() => setShowSettings(false)}>✕ Close</button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem", maxWidth: "420px" }}>
+            <div className="form-group">
+              <label>Fund Name</label>
+              <input
+                value={settingName}
+                onChange={(e) => setSettingName(e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label>
+                Monthly Installment (₹)
+                {winnerDeclared && <span className="hint"> — locked after first draw 🔒</span>}
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={settingInstallment}
+                onChange={(e) => setSettingInstallment(e.target.value)}
+                disabled={winnerDeclared}
+              />
+            </div>
+            <div className="form-group">
+              <label>
+                Total Cycles
+                {winnerDeclared && <span className="hint"> — locked after first draw 🔒</span>}
+              </label>
+              <input
+                type="number"
+                min={slots.length}
+                value={settingCycles}
+                onChange={(e) => setSettingCycles(e.target.value)}
+                disabled={winnerDeclared}
+              />
+            </div>
+            {settingError && <p className="form-error">{settingError}</p>}
+            <div className="btn-group">
+              <button className="btn btn-ghost" onClick={() => setShowSettings(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveSettings} disabled={settingSaving}>
+                {settingSaving ? "Saving…" : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Installment Tracking */}
       <InstallmentPanel
@@ -651,6 +845,18 @@ export default function GroupDashboardPage() {
           })}
         </div>
       </div>
+
+      {/* Admin Management (admin only) */}
+      {isAdmin && (
+        <AdminManagementSection
+          groupId={groupId}
+          adminIds={group.admin_ids}
+          createdBy={group.created_by}
+          slots={slots}
+          currentUserId={user!.id}
+          onChanged={() => qc.invalidateQueries({ queryKey: ["group", groupId] })}
+        />
+      )}
 
       {/* Prize History */}
       <div className="section">

@@ -5,8 +5,6 @@ The system SHALL allow a group admin or the slot's linked member (or sub-member)
 
 **Draw-required gate**: Mark Paid actions SHALL be disabled until the prize draw for the current cycle has been performed.
 
-**Pay Now amount**: When a user initiates a UPI payment via the Pay Now button, the amount shown SHALL reflect the total of all their unpaid positions for the current cycle, not the flat per-slot installment amount.
-
 #### Scenario: Admin marks installment as paid
 - **WHEN** an admin marks a contributor slot's installment as paid for the current cycle after the prize draw is done
 - **THEN** the system records the payment with the current timestamp and updates the cycle's payment summary
@@ -37,10 +35,6 @@ The system SHALL allow a group admin or the slot's linked member (or sub-member)
 - **AND** the slot status is `partially paid` if at least one but not all sub-members have paid
 - **AND** the slot status is `paid` only when ALL sub-members have paid
 - **AND** the slot status is `unpaid` if no sub-members have paid
-
-#### Scenario: Multi-position user Pay Now shows consolidated amount
-- **WHEN** a user with two unpaid positions clicks Pay Now
-- **THEN** the UPI modal amount equals the sum of amounts owed across all their unpaid positions
 
 ### Requirement: Contributor self-reports payment
 The system SHALL allow a registered contributor (or sub-member) to mark their own installment as paid, subject to admin confirmation. The payment SHALL be in a "pending confirmation" state until an admin approves it.

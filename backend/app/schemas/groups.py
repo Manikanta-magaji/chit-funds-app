@@ -25,6 +25,12 @@ class GroupCreateRequest(BaseModel):
         return v
 
 
+class GroupUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    installment_amount: Optional[float] = None
+    total_cycles: Optional[int] = None
+
+
 class AdminIn(BaseModel):
     user_id: int
 
