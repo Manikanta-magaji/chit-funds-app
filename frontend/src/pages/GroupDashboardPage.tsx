@@ -118,15 +118,15 @@ function LinkAccountButton({ label, onLink }: { label: string; onLink: (u: User)
 function AdminManagementSection({
   groupId,
   adminIds,
+  adminUsers,
   createdBy,
-  slots,
   currentUserId,
   onChanged,
 }: {
   groupId: number;
   adminIds: number[];
+  adminUsers: { id: number; display_name: string | null }[];
   createdBy: number;
-  slots: any[];
   currentUserId: number;
   onChanged: () => void;
 }) {
@@ -134,13 +134,9 @@ function AdminManagementSection({
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
-  // Build a name map from slot linked users for display
   const nameMap: Record<number, string> = {};
-  for (const s of slots) {
-    if (s.linked_user_id) nameMap[s.linked_user_id] = s.name;
-    for (const sm of s.sub_members ?? []) {
-      if (sm.linked_user_id) nameMap[sm.linked_user_id] = sm.name;
-    }
+  for (const a of adminUsers) {
+    if (a.display_name) nameMap[a.id] = a.display_name;
   }
 
   const handleGrant = async (u: User) => {
@@ -176,7 +172,7 @@ function AdminManagementSection({
         {adminIds.map((uid) => (
           <div key={uid} className="slot-row" style={{ padding: "8px 12px" }}>
             <span style={{ flex: 1 }}>
-              {nameMap[uid] ?? (uid === currentUserId ? "You" : `User #${uid}`)}
+              {uid === currentUserId ? "You" : (nameMap[uid] ?? "Admin")}
               {uid === createdBy && <span className="badge badge-registered" style={{ marginLeft: "6px" }}>Creator</span>}
             </span>
             {adminIds.length > 1 && (
@@ -677,7 +673,7 @@ export default function GroupDashboardPage() {
                   <div className="contributor-row">
                     <div className="contributor-info">
                       <span className="contributor-name">{slot.name}</span>
-                      {isWinnerSlot && <span className="badge badge-winner">🏆 Winner</span>}
+                      {isWinnerSlot && <span title="Prize winner this cycle" style={{ marginLeft: "4px" }}>🏆</span>}
                       {isRegistered ? (
                         <span className="badge badge-registered" title={slot.linked_user_display_name ?? undefined}>Registered</span>
                       ) : (
@@ -688,11 +684,6 @@ export default function GroupDashboardPage() {
                       )}
                     </div>
                     <div className="contributor-actions">
-                      <span className={`payment-chip payment-chip-${slot.current_cycle_payment_status || "unpaid"}`}>
-                        {slot.current_cycle_payment_status === "partial"
-                          ? "partially paid"
-                          : slot.current_cycle_payment_status || "unpaid"}
-                      </span>
                       {isAdmin && !isRegistered && (
                         <LinkAccountButton
                           label="Link Account"
@@ -828,6 +819,29 @@ export default function GroupDashboardPage() {
               );
             })}
           </div>
+
+          {/* Admin-only users (admins not linked to any contributor slot) */}
+          {(() => {
+            const adminOnlyUsers = (group.admin_users ?? []).filter(
+              (a) => !slots.some((s: any) => s.linked_user_id === a.id)
+            );
+            if (adminOnlyUsers.length === 0) return null;
+            return (
+              <div style={{ marginTop: "1rem" }}>
+                <p className="text-muted" style={{ fontSize: "0.82rem", marginBottom: "6px" }}>Group admins (not contributors)</p>
+                {adminOnlyUsers.map((a) => (
+                  <div key={a.id} className="contributor-block">
+                    <div className="contributor-row">
+                      <div className="contributor-info">
+                        <span className="contributor-name">{a.display_name ?? "Admin"}</span>
+                        <span className="badge badge-registered" style={{ marginLeft: "6px" }}>Admin</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -945,8 +959,8 @@ export default function GroupDashboardPage() {
           <AdminManagementSection
             groupId={groupId}
             adminIds={group.admin_ids}
+            adminUsers={group.admin_users ?? []}
             createdBy={group.created_by}
-            slots={slots}
             currentUserId={user!.id}
             onChanged={() => qc.invalidateQueries({ queryKey: ["group", groupId] })}
           />

@@ -245,15 +245,17 @@ def self_report_payment(
         raise HTTPException(status_code=400, detail="Payment already confirmed as paid.")
 
     if existing:
-        existing.status = PaymentStatus.pending
+        existing.status = PaymentStatus.paid
+        existing.paid_at = datetime.now(timezone.utc)
     else:
         db.add(InstallmentPayment(
             cycle_id=cycle.id,
             slot_id=slot.id,
-            status=PaymentStatus.pending,
+            status=PaymentStatus.paid,
+            paid_at=datetime.now(timezone.utc),
         ))
     db.commit()
-    return {"message": "Payment reported. Awaiting admin confirmation."}
+    return {"message": "Payment recorded."}
 
 
 # ---------------------------------------------------------------------------

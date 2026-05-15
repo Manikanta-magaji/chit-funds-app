@@ -34,6 +34,11 @@ export interface Slot {
   current_cycle_payment_status?: string;
 }
 
+export interface AdminUser {
+  id: number;
+  display_name: string | null;
+}
+
 export interface GroupDetail {
   id: number;
   name: string;
@@ -44,6 +49,7 @@ export interface GroupDetail {
   created_by: number;
   created_at: string;
   admin_ids: number[];
+  admin_users: AdminUser[];
   slots: Slot[];
 }
 

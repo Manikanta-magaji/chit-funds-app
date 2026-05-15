@@ -275,6 +275,10 @@ def _group_to_out(group: ChitGroup) -> GroupOut:
         created_by=group.created_by,
         created_at=group.created_at,
         admin_ids=[a.user_id for a in group.admins],
+        admin_users=[
+            {"id": a.user_id, "display_name": a.user.display_name or a.user.email}
+            for a in group.admins
+        ],
         slots=[
             {
                 "id": s.id,

@@ -65,6 +65,13 @@ class CycleOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AdminUserOut(BaseModel):
+    id: int
+    display_name: Optional[str]
+
+    model_config = {"from_attributes": True}
+
+
 class GroupOut(BaseModel):
     id: int
     name: str
@@ -75,6 +82,7 @@ class GroupOut(BaseModel):
     created_by: int
     created_at: datetime
     admin_ids: List[int] = []
+    admin_users: List[AdminUserOut] = []
     slots: List[SlotOut] = []
 
     model_config = {"from_attributes": True}

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getInstallments, markInstallment, confirmPayment } from "../api/endpoints";
+import { getInstallments, markInstallment } from "../api/endpoints";
 import { useAuth } from "../context/AuthContext";
 import type { Slot } from "../api/types";
 
@@ -31,9 +31,14 @@ function cycleLabel(cycleNum: number, createdAt: string): string {
 
 function statusBadgeClass(status: string) {
   if (status === "paid") return "badge-success";
-  if (status === "pending") return "badge-warning";
-  if (status === "partial") return "badge-partial";
+  if (status === "pending" || status === "partial") return "badge-warning";
   return "badge-error";
+}
+
+function statusLabel(status: string) {
+  if (status === "paid") return "Paid";
+  if (status === "pending" || status === "partial") return "In Progress";
+  return "Unpaid";
 }
 
 function fmtDate(iso: string | null) {
@@ -60,12 +65,6 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
   const markMutation = useMutation({
     mutationFn: ({ slotId, action, subMemberId }: { slotId: number; action: "pay" | "unpay"; subMemberId?: number }) =>
       markInstallment(groupId, viewCycle, slotId, action, subMemberId),
-    onSuccess: invalidate,
-  });
-
-  const confirmMutation = useMutation({
-    mutationFn: ({ slotId, approve }: { slotId: number; approve: boolean }) =>
-      confirmPayment(groupId, viewCycle, slotId, approve),
     onSuccess: invalidate,
   });
 
@@ -110,7 +109,6 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
     : 0;
 
   const isCurrentCycleView = viewCycle === currentCycle;
-  const pendingItems = installments.filter((i: any) => i.status === "pending");
   const cycles = Array.from({ length: totalCycles }, (_, i) => i + 1);
 
   return (
@@ -134,8 +132,7 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
           </select>
           <div className="badge-group">
             <span className="badge badge-success">{installments.filter((i: any) => i.status === "paid").length} paid</span>
-            <span className="badge badge-warning">{pendingItems.length} pending</span>
-            <span className="badge badge-partial">{installments.filter((i: any) => i.status === "partial").length} partial</span>
+            <span className="badge badge-warning">{installments.filter((i: any) => i.status === "partial" || i.status === "pending").length} in progress</span>
             <span className="badge badge-error">{installments.filter((i: any) => i.status === "unpaid").length} unpaid</span>
           </div>
         </div>
@@ -145,29 +142,6 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
       {isAdmin && isCurrentCycleView && !winnerSlotId && (
         <div className="info-banner">
           ⚠️ Draw Prize first before marking installments as paid.
-        </div>
-      )}
-
-      {/* Admin: pending confirmations */}
-      {isAdmin && isCurrentCycleView && pendingItems.length > 0 && (
-        <div className="pending-panel">
-          <h4>⏳ Pending Confirmations</h4>
-          {pendingItems.map((item: any) => (
-            <div key={item.slot_id} className="pending-row">
-              <div>
-                <span className="fw-600">{item.slot_name}</span>
-                <span className="text-muted ml-1">— self-reported payment</span>
-              </div>
-              <div className="btn-group">
-                <button className="btn btn-sm btn-success" onClick={() => confirmMutation.mutate({ slotId: item.slot_id, approve: true })}>
-                  Approve
-                </button>
-                <button className="btn btn-sm btn-danger" onClick={() => confirmMutation.mutate({ slotId: item.slot_id, approve: false })}>
-                  Reject
-                </button>
-              </div>
-            </div>
-          ))}
         </div>
       )}
 
@@ -225,12 +199,12 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
                       </td>
                       <td>
                         <span className={`badge ${statusBadgeClass(item.status)}`}>
-                          {item.status}
+                          {statusLabel(item.status)}
                         </span>
                       </td>
                       <td className="text-muted small">{fmtDate(item.paid_at)}</td>
                       <td className="text-muted small">
-                        {item.is_self_reported ? <em>Self-reported</em> : item.confirmed_by_name || "—"}
+                        {item.confirmed_by_name || "—"}
                       </td>
                       {(isCurrentCycleView || isAdmin) && (
                         <td>
@@ -269,7 +243,7 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
                             <span className="text-muted small ml-1">₹{sm.split_amount.toLocaleString()}</span>
                           </td>
                           <td>
-                            <span className={`badge ${statusBadgeClass(smStatus)}`}>{smStatus}</span>
+                            <span className={`badge ${statusBadgeClass(smStatus)}`}>{statusLabel(smStatus)}</span>
                           </td>
                           <td className="text-muted small">{fmtDate(smPayment?.paid_at ?? null)}</td>
                           <td className="text-muted small">{smPayment?.confirmed_by_name || "—"}</td>
