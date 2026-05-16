@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 from sqlalchemy import (
-    Boolean, Column, DateTime, Enum, Float, ForeignKey,
+    Boolean, Column, Date, DateTime, Enum, Float, ForeignKey,
     Integer, String, func,
 )
 from sqlalchemy.orm import relationship
@@ -45,6 +45,7 @@ class ChitGroup(Base):
     total_cycles = Column(Integer, nullable=False)
     current_cycle = Column(Integer, default=1, nullable=False)
     exclude_arrears_from_draw = Column(Boolean, default=True, nullable=False)
+    start_date = Column(Date, nullable=True)  # optional fund start month/year
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
@@ -81,6 +82,8 @@ class ContributorSlot(Base):
     name = Column(String, nullable=False)
     is_offline = Column(Boolean, default=False, nullable=False)
     linked_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    mobile_number = Column(String(20), nullable=True)
+    upi_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
     group = relationship("ChitGroup", back_populates="slots")
@@ -102,6 +105,8 @@ class SubMember(Base):
     name = Column(String, nullable=False)
     linked_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     split_amount = Column(Float, nullable=False)
+    mobile_number = Column(String(20), nullable=True)
+    upi_id = Column(String, nullable=True)
 
     slot = relationship("ContributorSlot", back_populates="sub_members")
     linked_user = relationship("User", back_populates="sub_memberships", foreign_keys=[linked_user_id])

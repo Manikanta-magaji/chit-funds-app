@@ -293,9 +293,12 @@ a:hover { text-decoration: underline; }
 
 /* User search / suggestion UI */
 .suggestion-list {
+  position: absolute;
+  width: 100%;
+  z-index: 20;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--surface);
+  background: var(--bg-card);
   box-shadow: 0 4px 12px rgba(0,0,0,.08);
   display: flex;
   flex-direction: column;
@@ -328,7 +331,13 @@ a:hover { text-decoration: underline; }
   border-radius: 6px;
   font-size: .875rem;
 }
-.sub-member-existing { margin-bottom: 6px; }
+.sub-member-existing { margin-bottom: 6px; display: flex; flex-direction: column; gap: .35rem; }
+.sub-member-existing .sub-member-row {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: .45rem .65rem;
+}
 
 /* Payment status chips */
 .payment-chip {

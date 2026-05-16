@@ -44,6 +44,7 @@ def create_group(
         installment_amount=body.installment_amount,
         total_cycles=body.total_cycles,
         exclude_arrears_from_draw=body.exclude_arrears_from_draw,
+        start_date=body.start_date,
         created_by=current_user.id,
     )
     db.add(group)
@@ -135,16 +136,22 @@ def update_group(
     _require_admin(db, group_id, current_user.id)
 
     financial_change = body.installment_amount is not None or body.total_cycles is not None
-    if financial_change:
+    if financial_change or body.start_date is not None:
         has_winner = db.query(Cycle).filter(
             Cycle.group_id == group_id,
             Cycle.winner_slot_id.isnot(None),
         ).first()
         if has_winner:
-            raise HTTPException(
-                status_code=409,
-                detail="Installment amount and cycle count cannot be changed after the first winner has been declared.",
-            )
+            if financial_change:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Installment amount and cycle count cannot be changed after the first winner has been declared.",
+                )
+            if body.start_date is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Start date cannot be changed after the first winner has been declared.",
+                )
 
     if body.total_cycles is not None:
         slot_count = db.query(ContributorSlot).filter(ContributorSlot.group_id == group_id).count()
@@ -160,6 +167,8 @@ def update_group(
         group.installment_amount = body.installment_amount
     if body.total_cycles is not None:
         group.total_cycles = body.total_cycles
+    if body.start_date is not None:
+        group.start_date = body.start_date
 
     db.commit()
     db.refresh(group)
@@ -272,6 +281,7 @@ def _group_to_out(group: ChitGroup) -> GroupOut:
         total_cycles=group.total_cycles,
         current_cycle=group.current_cycle,
         exclude_arrears_from_draw=group.exclude_arrears_from_draw,
+        start_date=group.start_date,
         created_by=group.created_by,
         created_at=group.created_at,
         admin_ids=[a.user_id for a in group.admins],
@@ -285,12 +295,16 @@ def _group_to_out(group: ChitGroup) -> GroupOut:
                 "name": s.name,
                 "is_offline": s.is_offline,
                 "linked_user_id": s.linked_user_id,
+                "mobile_number": s.mobile_number,
+                "upi_id": s.upi_id,
                 "sub_members": [
                     {
                         "id": sm.id,
                         "name": sm.name,
                         "linked_user_id": sm.linked_user_id,
                         "split_amount": sm.split_amount,
+                        "mobile_number": sm.mobile_number,
+                        "upi_id": sm.upi_id,
                     }
                     for sm in s.sub_members
                 ],

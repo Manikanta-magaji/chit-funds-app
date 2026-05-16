@@ -19,12 +19,13 @@ export const createGroup = (data: {
   installment_amount: number;
   total_cycles: number;
   exclude_arrears_from_draw?: boolean;
+  start_date?: string; // ISO date YYYY-MM-DD
 }) => api.post<GroupDetail>("/groups", data).then((r) => r.data);
 export const deleteGroup = (groupId: number) =>
   api.delete(`/groups/${groupId}`).then((r) => r.data);
 export const updateGroupSettings = (
   groupId: number,
-  data: { name?: string; installment_amount?: number; total_cycles?: number },
+  data: { name?: string; installment_amount?: number; total_cycles?: number; start_date?: string },
 ) => api.patch<GroupDetail>(`/groups/${groupId}`, data).then((r) => r.data);
 export const grantAdmin = (groupId: number, userId: number) =>
   api.post(`/groups/${groupId}/admins`, { user_id: userId }).then((r) => r.data);
@@ -38,14 +39,22 @@ export const searchUsers = (q: string) =>
 // Slots
 export const listSlots = (groupId: number) =>
   api.get(`/groups/${groupId}/slots`).then((r) => r.data);
-export const addSlot = (groupId: number, name: string, linked_user_id?: number) =>
-  api.post(`/groups/${groupId}/slots`, { name, linked_user_id }).then((r) => r.data);
+export const addSlot = (groupId: number, name: string, linked_user_id?: number, mobile_number?: string, upi_id?: string) =>
+  api.post(`/groups/${groupId}/slots`, { name, linked_user_id, mobile_number, upi_id }).then((r) => r.data);
 export const removeSlot = (groupId: number, slotId: number) =>
   api.delete(`/groups/${groupId}/slots/${slotId}`).then((r) => r.data);
+export const updateSlot = (groupId: number, slotId: number, data: { name?: string; mobile_number?: string; upi_id?: string }) =>
+  api.patch(`/groups/${groupId}/slots/${slotId}`, data).then((r) => r.data);
+export const updateSubMember = (
+  groupId: number,
+  slotId: number,
+  subMemberId: number,
+  data: { name?: string; mobile_number?: string; upi_id?: string; split_amount?: number },
+) => api.patch(`/groups/${groupId}/slots/${slotId}/sub-members/${subMemberId}`, data).then((r) => r.data);
 export const setSubMembers = (
   groupId: number,
   slotId: number,
-  sub_members: { name: string; linked_user_id?: number; split_amount: number }[]
+  sub_members: { name: string; linked_user_id?: number; split_amount: number; mobile_number?: string; upi_id?: string }[]
 ) => api.put(`/groups/${groupId}/slots/${slotId}/sub-members`, { sub_members }).then((r) => r.data);
 export const linkSlotToUser = (groupId: number, slotId: number, userId: number) =>
   api.put(`/groups/${groupId}/slots/${slotId}/link`, { user_id: userId }).then((r) => r.data);

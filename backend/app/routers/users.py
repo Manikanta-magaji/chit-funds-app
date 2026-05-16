@@ -6,6 +6,7 @@ from app.core.jwt import get_current_user, require_complete_profile
 from app.core.mobile import normalize_mobile
 from app.db.session import get_db
 from app.models.models import User
+from app.routers.auth import _link_offline_entries_by_mobile
 from app.schemas.auth import ProfileUpdateRequest, UserOut
 
 router = APIRouter()
@@ -32,6 +33,9 @@ def update_profile(
     # Infer UPI ID from mobile if not provided
     current_user.upi_id = body.upi_id if body.upi_id else f"{normalize_mobile(body.mobile_number)}@upi"
     current_user.is_profile_complete = True
+    db.commit()
+    db.refresh(current_user)
+    _link_offline_entries_by_mobile(db, current_user)
     db.commit()
     db.refresh(current_user)
     return current_user

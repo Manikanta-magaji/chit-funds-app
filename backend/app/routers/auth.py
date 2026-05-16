@@ -9,13 +9,35 @@ from app.core.jwt import create_access_token, get_current_user
 from app.core.mobile import normalize_mobile
 from app.core.security import hash_password, verify_password
 from app.db.session import get_db
-from app.models.models import User
+from app.models.models import ContributorSlot, SubMember, User
 from app.schemas.auth import LoginRequest, RegisterRequest, UserOut
 
 router = APIRouter()
 
 COOKIE_NAME = "access_token"
 COOKIE_KWARGS = dict(httponly=True, samesite="lax", secure=False)  # set secure=True in production
+
+
+def _link_offline_entries_by_mobile(db, user: User) -> None:
+    """Link any offline contributor slots and sub-members whose mobile matches the user."""
+    mobile = user.mobile_number
+    if not mobile:
+        return
+    slots = db.query(ContributorSlot).filter(
+        ContributorSlot.is_offline == True,
+        ContributorSlot.linked_user_id == None,
+        ContributorSlot.mobile_number == mobile,
+    ).all()
+    for slot in slots:
+        slot.linked_user_id = user.id
+        slot.is_offline = False
+
+    sub_members = db.query(SubMember).filter(
+        SubMember.linked_user_id == None,
+        SubMember.mobile_number == mobile,
+    ).all()
+    for sm in sub_members:
+        sm.linked_user_id = user.id
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +75,8 @@ def register(body: RegisterRequest, response: Response, db: Session = Depends(ge
         db.rollback()
         raise HTTPException(status_code=400, detail="Mobile number or email already registered.")
     db.refresh(user)
+    _link_offline_entries_by_mobile(db, user)
+    db.commit()
 
     token = create_access_token(user.id)
     response.set_cookie(COOKIE_NAME, token, **COOKIE_KWARGS)

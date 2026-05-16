@@ -14,6 +14,11 @@ export default function CreateGroupPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Optional start month/year (default: empty = not set)
+  const today = new Date();
+  const [startMonth, setStartMonth] = useState("");   // "1"–"12" or ""
+  const [startYear, setStartYear] = useState("");     // "2024" etc. or ""
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
@@ -22,17 +27,38 @@ export default function CreateGroupPage() {
     if (!name.trim()) { setError("Group name is required."); return; }
     if (!installment_amount || installment_amount <= 0) { setError("Installment amount must be positive."); return; }
     if (!total_cycles || total_cycles <= 0) { setError("Number of cycles must be at least 1."); return; }
+
+    let start_date: string | undefined;
+    if (startMonth && startYear) {
+      const m = parseInt(startMonth, 10);
+      const y = parseInt(startYear, 10);
+      if (isNaN(m) || m < 1 || m > 12 || isNaN(y) || y < 2000 || y > 2100) {
+        setError("Please enter a valid start month and year."); return;
+      }
+      start_date = `${y}-${String(m).padStart(2, "0")}-01`;
+    } else if (startMonth || startYear) {
+      setError("Please fill in both start month and year, or leave both empty."); return;
+    }
+
     setLoading(true);
     try {
-      const group = await createGroup({ name: name.trim(), installment_amount, total_cycles, exclude_arrears_from_draw: excludeArrears });
+      const group = await createGroup({ name: name.trim(), installment_amount, total_cycles, exclude_arrears_from_draw: excludeArrears, start_date });
       await qc.invalidateQueries({ queryKey: ["groups"] });
-      navigate(`/groups/${group.id}`);
+      navigate(`/groups/${group.id}`, { state: { tab: "contributors" } });
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to create group.");
     } finally {
       setLoading(false);
     }
   };
+
+  // Build year options: 5 years back to 5 years forward
+  const yearOptions: number[] = [];
+  for (let y = today.getFullYear() - 5; y <= today.getFullYear() + 5; y++) {
+    yearOptions.push(y);
+  }
+
+  const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
   return (
     <div className="page-container page-narrow">
@@ -91,6 +117,32 @@ export default function CreateGroupPage() {
             <label htmlFor="excludeArrears">
               Exclude slots with unpaid installments from the prize draw
             </label>
+          </div>
+          <div className="form-group">
+            <label>Start Month & Year <span className="text-muted">(optional)</span></label>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <select
+                value={startMonth}
+                onChange={(e) => setStartMonth(e.target.value)}
+                style={{ flex: 1 }}
+              >
+                <option value="">Month</option>
+                {monthNames.map((m, i) => (
+                  <option key={i + 1} value={String(i + 1)}>{m}</option>
+                ))}
+              </select>
+              <select
+                value={startYear}
+                onChange={(e) => setStartYear(e.target.value)}
+                style={{ flex: 1 }}
+              >
+                <option value="">Year</option>
+                {yearOptions.map((y) => (
+                  <option key={y} value={String(y)}>{y}</option>
+                ))}
+              </select>
+            </div>
+            <p className="field-hint">When the fund started or will start — used for reference only</p>
           </div>
           {error && <p className="form-error">{error}</p>}
           <div className="btn-group">

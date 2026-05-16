@@ -47,6 +47,51 @@ The system SHALL allow a single contributor slot to be assigned to multiple sub-
 - **WHEN** an admin adds a registered user as a sub-member to a slot where that user is already linked to another slot or sub-member entry in the same group
 - **THEN** the system displays a warning and requires explicit confirmation before saving
 
+### Requirement: Edit unregistered contributor details
+The system SHALL allow a group admin to update the name, mobile number, and UPI ID of an unregistered (offline) contributor slot or sub-member at any time. Registered slots and sub-members are not editable via this flow — registered users manage their own profile. For sub-members, the split amount MUST also be editable.
+
+#### Scenario: Edit offline contributor slot
+- **WHEN** an admin edits an unregistered contributor slot's name, mobile number, or UPI ID
+- **THEN** the system updates the slot record and the contributor list reflects the new values immediately
+
+#### Scenario: Edit offline sub-member
+- **WHEN** an admin edits an unregistered sub-member's name, mobile number, UPI ID, or split amount
+- **THEN** the system updates the sub-member record; the admin is responsible for ensuring all split amounts still sum to the slot's installment amount
+
+#### Scenario: Edit blocked on registered slot
+- **WHEN** a contributor slot is linked to a registered user account
+- **THEN** the Edit action is not shown; the user manages their own details from their profile
+
+### Requirement: Add shared contributor in one step
+The system SHALL allow an admin to create a shared contributor slot and its sub-members in a single form submission. The slot and all sub-members are saved atomically from the admin's perspective.
+
+#### Scenario: Add shared contributor with sub-members inline
+- **WHEN** an admin selects "Sharing with others" in the add-contributor form and fills in at least 2 sub-member rows with names and amounts that sum to the full installment
+- **THEN** clicking "Add Contributor" creates the slot, then immediately creates all sub-members, and closes the form
+
+#### Scenario: Split total must match installment amount
+- **WHEN** the sub-member amounts do not sum to the slot's installment amount
+- **THEN** the "Add Contributor" button is disabled; the form shows the current total vs. required amount
+
+### Requirement: User search suggestions show identifying details
+The system SHALL display the mobile number and email address alongside the display name in user search suggestion results so that admins can distinguish users with identical display names. The suggestion dropdown MUST have a solid opaque background so that underlying page content does not show through. The suggestion list MUST be dismissed immediately when the admin selects a user — it SHALL NOT remain visible after a selection is made.
+
+#### Scenario: Suggestion shows mobile and email
+- **WHEN** an admin searches for a user by name and results are displayed
+- **THEN** each suggestion item shows the user's display name, mobile number (if present), and email address (if present)
+
+#### Scenario: Suggestion dismissed after selection
+- **WHEN** an admin clicks a suggestion item to select a user
+- **THEN** the suggestion dropdown disappears immediately and does not remain open
+
+#### Scenario: Suggestion background is opaque
+- **WHEN** the suggestion dropdown is visible
+- **THEN** the dropdown has a fully opaque white background regardless of hover state, so no underlying content is visible through it
+
+#### Scenario: Suggestion reappears on new input
+- **WHEN** the admin clears the name field and types new text after a prior selection
+- **THEN** the suggestion list appears again based on the new query
+
 ### Requirement: Link offline contributor to registered account
 The system SHALL allow any group admin to link an existing offline contributor slot to a registered user account at any time.
 

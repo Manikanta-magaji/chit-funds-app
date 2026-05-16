@@ -1,3 +1,18 @@
+### Requirement: Fund start date
+The system SHALL allow an admin to optionally record the month and year in which a chit fund was launched. This is stored for reference and display purposes. When provided, the value MUST be a valid calendar month and year; the day component is always stored as 1 (the first of the month). Both month and year MUST be provided together — specifying only one is an error.
+
+#### Scenario: Create group with start month/year
+- **WHEN** an admin fills in the optional Start Month and Start Year fields when creating a group
+- **THEN** the system stores the start date as `YYYY-MM-01` and returns it in the group detail response
+
+#### Scenario: Create group without start date
+- **WHEN** an admin leaves both Start Month and Start Year empty
+- **THEN** the system creates the group with `start_date = null`; all group operations proceed normally
+
+#### Scenario: Partial start date rejected
+- **WHEN** an admin fills in only one of Start Month or Start Year
+- **THEN** the system rejects the form with a validation message requiring both fields or neither
+
 ### Requirement: Admin role management
 The system SHALL allow a group admin to grant admin rights to any registered user — whether or not they are a contributor slot holder in the group — and to revoke admin rights from existing admins. A group MUST always have at least one admin; the last admin cannot be removed.
 

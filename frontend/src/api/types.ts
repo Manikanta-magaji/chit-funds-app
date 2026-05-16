@@ -22,6 +22,8 @@ export interface SubMember {
   linked_user_id: number | null;
   linked_user_display_name: string | null;
   split_amount: number;
+  mobile_number: string | null;
+  upi_id: string | null;
 }
 
 export interface Slot {
@@ -30,6 +32,8 @@ export interface Slot {
   is_offline: boolean;
   linked_user_id: number | null;
   linked_user_display_name: string | null;
+  mobile_number: string | null;
+  upi_id: string | null;
   sub_members: SubMember[];
   current_cycle_payment_status?: string;
 }
@@ -46,6 +50,7 @@ export interface GroupDetail {
   total_cycles: number;
   current_cycle: number;
   exclude_arrears_from_draw: boolean;
+  start_date: string | null;  // ISO date string YYYY-MM-DD, optional
   created_by: number;
   created_at: string;
   admin_ids: number[];
@@ -56,7 +61,13 @@ export interface GroupDetail {
 export interface DrawHistoryEntry {
   cycle_number: number;
   is_closed: boolean;
-  winner_slot: { id: number; name: string; upi_id: string | null; display_name: string | null } | null;
+  winner_slot: {
+    id: number;
+    name: string;
+    upi_id: string | null;
+    display_name: string | null;
+    sub_members: { id: number; name: string; upi_id: string | null; share_amount: number }[];
+  } | null;
   payout_status: "pending" | "completed" | null;
 }
 

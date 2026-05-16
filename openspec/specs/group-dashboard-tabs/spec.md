@@ -28,7 +28,7 @@ The Overview tab SHALL display the fund stats summary and the Installment Tracki
 - **AND** the Installment Tracking panel for the current cycle is visible
 
 ### Requirement: Contributors tab content
-The Contributors tab SHALL display the full contributor slot list including sub-member editors, add-contributor form, and link-account flows. Slot rows SHALL show the slot name, registration status, and — where applicable — a winner indicator and admin action buttons. Payment status (paid/unpaid) SHALL NOT be shown on contributor rows; it is displayed exclusively in the Installment Tracking panel on the Overview tab. Admin users who hold no contributor slot SHALL be listed separately with their actual display name and a clear indication that they are administrators only.
+The Contributors tab SHALL display the full contributor slot list including sub-member editors and the add-contributor form. Slot rows SHALL show the slot name, registration status, and — where applicable — a winner indicator and admin action buttons. Payment status (paid/unpaid) SHALL NOT be shown on contributor rows; it is displayed exclusively in the Installment Tracking panel on the Overview tab. Admin users who hold no contributor slot SHALL be listed separately with their actual display name and a clear indication that they are administrators only. The Contributors tab SHALL NOT contain an Admin Management section; that belongs in the Settings tab.
 
 #### Scenario: Contributors tab shows slot management
 - **WHEN** the Contributors tab is active
@@ -50,6 +50,10 @@ The Contributors tab SHALL display the full contributor slot list including sub-
 - **WHEN** an admin user without a slot is displayed
 - **THEN** their entry does NOT show a generic "User #N" label
 
+#### Scenario: Admin Management not shown in Contributors tab
+- **WHEN** an admin views the Contributors tab
+- **THEN** there is no Admin Management section visible; it is only accessible via the Settings tab
+
 ### Requirement: History tab content
 The History tab SHALL display the Prize History table and, for admins, the Draw Prize and Next Cycle action buttons.
 
@@ -62,7 +66,7 @@ The History tab SHALL display the Prize History table and, for admins, the Draw 
 - **THEN** the Draw Prize and Next Cycle buttons are visible in that tab
 
 ### Requirement: Settings tab content (admin-only)
-The Settings tab SHALL be visible only to admins and SHALL contain the Fund Settings form and the Admin Management panel.
+The Settings tab SHALL be visible only to admins and SHALL contain the Fund Settings form, the Admin Management panel (as a separate H3 section), and the Danger Zone.
 
 #### Scenario: Settings tab hidden for non-admins
 - **WHEN** a non-admin member views the Group Dashboard
@@ -70,7 +74,7 @@ The Settings tab SHALL be visible only to admins and SHALL contain the Fund Sett
 
 #### Scenario: Settings tab contains fund settings and admin management
 - **WHEN** an admin clicks the Settings tab
-- **THEN** the Fund Settings form (name, installment amount, cycles) and the Admin Management panel (current admin list with revoke, add admin search) are visible
+- **THEN** the Fund Settings form (name, installment amount, cycles, start date), the Admin Management section, and the Danger Zone are all visible in that order
 
 ### Requirement: Installment payment status display
 The Installment Tracking panel SHALL display a consolidated "In Progress" badge for any slot whose payment is not yet complete, regardless of whether that slot has self-reported a pending payment or has partially-paid sub-members.

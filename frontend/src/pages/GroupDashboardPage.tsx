@@ -8,66 +8,28 @@ function useDebounce<T>(value: T, delay: number): T {
   }, [value, delay]);
   return debounced;
 }
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link, useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  getGroup, listSlots, getDrawHistory, addSlot, removeSlot, advanceCycle,
-  setSubMembers, searchUsers, linkSlotToUser, linkSubMemberToUser, deleteGroup,
+  getGroup, listSlots, getDrawHistory, removeSlot, advanceCycle,
+  setSubMembers, searchUsers, deleteGroup,
   getInstallments, updateGroupSettings, grantAdmin, revokeAdmin,
 } from "../api/endpoints";
 import { useAuth } from "../context/AuthContext";
 import DrawModal from "../components/DrawModal";
 import InstallmentPanel from "../components/InstallmentPanel";
 import UpiPaymentModal from "../components/UpiPaymentModal";
+import AddContributorModal from "../components/AddContributorModal";
+import EditContributorModal from "../components/EditContributorModal";
+import UserSuggestion from "../components/UserSuggestion";
 import type { User } from "../api/types";
 
 interface SubMemberDraft {
   name: string;
   split_amount: string;
   linked_user_id?: number;
-}
-
-interface LinkConfirmState {
-  type: "slot" | "sub-member";
-  slotId: number;
-  subMemberId?: number;
-  targetName: string;    // contributor / sub-member name
-  user: User;            // selected registered user
-}
-
-function UserSuggestion({
-  query,
-  onSelect,
-}: {
-  query: string;
-  onSelect: (u: User | null) => void;
-}) {
-  const debouncedQuery = useDebounce(query, 500);
-  const { data: matches = [], isFetching } = useQuery({
-    queryKey: ["user-search", debouncedQuery],
-    queryFn: () => searchUsers(debouncedQuery),
-    enabled: debouncedQuery.trim().length > 0,
-  });
-
-  if (!query.trim()) return null;
-  if (isFetching) return <p className="suggestion-hint">Searching…</p>;
-  if (matches.length === 0) return <p className="suggestion-hint text-muted">No registered user found — will be added as offline.</p>;
-
-  return (
-    <div className="suggestion-list">
-      {matches.map((u) => (
-        <button
-          key={u.id}
-          type="button"
-          className="suggestion-item"
-          onClick={() => onSelect(u)}
-        >
-          <span className="suggestion-name">{u.display_name}</span>
-          <span className="suggestion-email text-muted">{u.email}</span>
-        </button>
-      ))}
-    </div>
-  );
+  mobile_number?: string;
+  upi_id?: string;
 }
 
 function SubMemberSuggestion({ query, onSelect }: { query: string; onSelect: (u: User) => void }) {
@@ -83,34 +45,9 @@ function SubMemberSuggestion({ query, onSelect }: { query: string; onSelect: (u:
       {matches.map((u) => (
         <button key={u.id} type="button" className="suggestion-item" onClick={() => onSelect(u)}>
           <span className="suggestion-name">{u.display_name}</span>
-          <span className="suggestion-email text-muted">{u.email}</span>
+          <span className="suggestion-email text-muted">{[u.mobile_number, u.email].filter(Boolean).join(" · ")}</span>
         </button>
       ))}
-    </div>
-  );
-}
-
-function LinkAccountButton({ label, onLink }: { label: string; onLink: (u: User) => void }) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  return (
-    <div style={{ position: "relative", display: "inline-block" }}>
-      {!open ? (
-        <button className="btn btn-sm btn-ghost" onClick={() => setOpen(true)}>{label}</button>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          <input
-            autoFocus
-            className="input-sm"
-            placeholder="Name, email or mobile"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            style={{ minWidth: "160px" }}
-          />
-          <UserSuggestion query={query} onSelect={(u) => { if (u) { onLink(u); setOpen(false); setQuery(""); } }} />
-          <button className="btn btn-sm btn-ghost" style={{ fontSize: "0.75rem" }} onClick={() => { setOpen(false); setQuery(""); }}>Cancel</button>
-        </div>
-      )}
     </div>
   );
 }
@@ -217,20 +154,25 @@ export default function GroupDashboardPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
   const [showDraw, setShowDraw] = useState(false);
-  const [showPayModal, setShowPayModal] = useState(false);
+  const [showPayModal, setShowPayModal] = useState<{ payeeName: string; payeeUpiId: string | null; amount: number } | null>(null);
 
   // Viewed cycle — lifted here so it persists across tab switches
   const [viewCycle, setViewCycle] = useState(0);
   const prevCurrentCycleRef = useRef(0);
 
   // Tab navigation state
-  const [activeTab, setActiveTab] = useState<"overview" | "contributors" | "history" | "settings">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "contributors" | "history" | "settings">(
+    (location.state as any)?.tab ?? "overview"
+  );
 
   // Settings panel state
   const [settingName, setSettingName] = useState("");
   const [settingInstallment, setSettingInstallment] = useState("");
   const [settingCycles, setSettingCycles] = useState("");
+  const [settingStartMonth, setSettingStartMonth] = useState("");
+  const [settingStartYear, setSettingStartYear] = useState("");
   const [settingError, setSettingError] = useState("");
   const [settingSaving, setSettingSaving] = useState(false);
 
@@ -249,23 +191,18 @@ export default function GroupDashboardPage() {
     }
   };
 
-  // Add-contributor state
-  const [newSlotName, setNewSlotName] = useState("");
-  const [newSlotLinkedUser, setNewSlotLinkedUser] = useState<User | null>(null);
-  const [addingSlot, setAddingSlot] = useState(false);
-  const [slotError, setSlotError] = useState("");
-  const addInputRef = useRef<HTMLInputElement>(null);
+  // Add-contributor modal state
+  const [showAddModal, setShowAddModal] = useState(false);
+  type EditTarget =
+    | { kind: "slot"; slotId: number; name: string; mobile_number: string | null; upi_id: string | null }
+    | { kind: "sub-member"; slotId: number; subMemberId: number; name: string; mobile_number: string | null; upi_id: string | null; split_amount: number };
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
 
   // Sub-member editing state
   const [expandedSlotId, setExpandedSlotId] = useState<number | null>(null);
   const [subDrafts, setSubDrafts] = useState<SubMemberDraft[]>([]);
   const [subError, setSubError] = useState("");
   const [subSaving, setSubSaving] = useState(false);
-
-  // Link confirmation dialog state
-  const [linkConfirm, setLinkConfirm] = useState<LinkConfirmState | null>(null);
-  const [linkPending, setLinkPending] = useState(false);
-  const [linkError, setLinkError] = useState("");
 
   const { data: group, isLoading } = useQuery({
     queryKey: ["group", groupId],
@@ -294,16 +231,6 @@ export default function GroupDashboardPage() {
       setViewCycle(group.current_cycle);
     }
   }, [group?.current_cycle]);
-
-  const addSlotMutation = useMutation({
-    mutationFn: () => addSlot(groupId, newSlotLinkedUser ? (newSlotLinkedUser.display_name ?? newSlotName.trim()) : newSlotName.trim(), newSlotLinkedUser?.id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["slots", groupId] });
-      qc.invalidateQueries({ queryKey: ["group", groupId] });
-      setNewSlotName(""); setNewSlotLinkedUser(null); setAddingSlot(false); setSlotError("");
-    },
-    onError: (err: any) => setSlotError(err.response?.data?.detail || "Failed to add slot."),
-  });
 
   const removeSlotMutation = useMutation({
     mutationFn: (slotId: number) => removeSlot(groupId, slotId),
@@ -356,12 +283,19 @@ export default function GroupDashboardPage() {
       setSubError("All sub-members need a name.");
       return;
     }
+    const offlineWithoutMobile = subDrafts.find((d) => !d.linked_user_id && !d.mobile_number?.trim());
+    if (offlineWithoutMobile) {
+      setSubError(`Mobile number is required for offline sub-member "${offlineWithoutMobile.name || "(unnamed)"}".`);
+      return;
+    }
     setSubSaving(true);
     try {
       await setSubMembers(groupId, slotId, subDrafts.map((d) => ({
         name: d.name.trim(),
         split_amount: parseFloat(d.split_amount),
         linked_user_id: d.linked_user_id,
+        mobile_number: d.linked_user_id ? undefined : d.mobile_number?.trim() || undefined,
+        upi_id: d.linked_user_id ? undefined : d.upi_id?.trim() || undefined,
       })));
       qc.invalidateQueries({ queryKey: ["slots", groupId] });
       setExpandedSlotId(null);
@@ -369,26 +303,6 @@ export default function GroupDashboardPage() {
       setSubError(err.response?.data?.detail || "Failed to save.");
     } finally {
       setSubSaving(false);
-    }
-  };
-
-  const confirmLink = async () => {
-    if (!linkConfirm) return;
-    setLinkPending(true);
-    setLinkError("");
-    try {
-      if (linkConfirm.type === "slot") {
-        await linkSlotToUser(groupId, linkConfirm.slotId, linkConfirm.user.id);
-      } else {
-        await linkSubMemberToUser(groupId, linkConfirm.slotId, linkConfirm.subMemberId!, linkConfirm.user.id);
-      }
-      qc.invalidateQueries({ queryKey: ["slots", groupId] });
-      qc.invalidateQueries({ queryKey: ["group", groupId] });
-      setLinkConfirm(null);
-    } catch (err: any) {
-      setLinkError(err.response?.data?.detail || "Linking failed.");
-    } finally {
-      setLinkPending(false);
     }
   };
 
@@ -450,19 +364,6 @@ export default function GroupDashboardPage() {
     });
   };
 
-  const handleAddSlot = () => {
-    if (
-      newSlotLinkedUser &&
-      isUserAlreadyInGroup(newSlotLinkedUser.id) &&
-      !window.confirm(
-        `${newSlotLinkedUser.display_name ?? "This user"} is already a contributor in this group. Add them to another slot?`
-      )
-    ) {
-      return;
-    }
-    addSlotMutation.mutate();
-  };
-
   const saveSubMembersWithCheck = async (slotId: number) => {
     const duplicates = subDrafts.filter(
       (d) => d.linked_user_id && isUserAlreadyInGroup(d.linked_user_id, slotId)
@@ -487,17 +388,33 @@ export default function GroupDashboardPage() {
     setSettingName(group.name);
     setSettingInstallment(String(group.installment_amount));
     setSettingCycles(String(group.total_cycles));
+    if (group.start_date) {
+      const [, m, ] = group.start_date.split("-");
+      setSettingStartMonth(String(parseInt(m, 10)));
+      setSettingStartYear(group.start_date.split("-")[0]);
+    } else {
+      setSettingStartMonth("");
+      setSettingStartYear("");
+    }
     setSettingError("");
   };
 
   const saveSettings = async () => {
     setSettingError("");
-    const patch: { name?: string; installment_amount?: number; total_cycles?: number } = {};
+    const patch: { name?: string; installment_amount?: number; total_cycles?: number; start_date?: string } = {};
     if (settingName.trim() && settingName.trim() !== group.name) patch.name = settingName.trim();
     const newAmt = parseFloat(settingInstallment);
     if (!isNaN(newAmt) && newAmt !== group.installment_amount) patch.installment_amount = newAmt;
     const newCycles = parseInt(settingCycles, 10);
     if (!isNaN(newCycles) && newCycles !== group.total_cycles) patch.total_cycles = newCycles;
+    // start_date: both must be filled or both empty; partial is an error
+    if (settingStartMonth && settingStartYear) {
+      const iso = `${settingStartYear}-${String(parseInt(settingStartMonth, 10)).padStart(2, "0")}-01`;
+      if (iso !== (group.start_date ?? "")) patch.start_date = iso;
+    } else if (settingStartMonth || settingStartYear) {
+      setSettingError("Please fill in both start month and year, or leave both empty.");
+      return;
+    }
     if (Object.keys(patch).length === 0) { return; }
     setSettingSaving(true);
     try {
@@ -579,15 +496,44 @@ export default function GroupDashboardPage() {
                           ? <span className="text-muted" style={{ fontSize: "0.85rem" }}>You won this cycle 🎉</span>
                           : installmentsFetched && payNowTotal === 0
                             ? <span className="text-muted" style={{ fontSize: "0.85rem" }}>✓ All payments cleared</span>
-                            : viewCycleHistory.winner_slot.upi_id
-                              ? (
-                                <button className="btn btn-sm btn-primary" onClick={() => setShowPayModal(true)}>
-                                  💸 Pay Now
-                                </button>
-                              )
-                              : isAdmin && (
-                                <span className="text-muted" style={{ fontSize: "0.78rem" }}>No UPI ID — ask winner to update profile</span>
-                              )
+                            : (() => {
+                                const subMembers = viewCycleHistory.winner_slot.sub_members ?? [];
+                                if (subMembers.length > 1) {
+                                  // Multi-sub-member: one Pay Now per sub-member
+                                  const perShare = payNowTotal > 0 ? payNowTotal / subMembers.length : group.installment_amount / subMembers.length;
+                                  return (
+                                    <span style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                                      {subMembers.map((sm) => (
+                                        <span key={sm.id} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                          <span style={{ fontSize: "0.82rem" }}>{sm.name}</span>
+                                          {sm.upi_id ? (
+                                            <button
+                                              className="btn btn-sm btn-primary"
+                                              onClick={() => setShowPayModal({ payeeName: sm.name, payeeUpiId: sm.upi_id, amount: sm.share_amount ?? perShare })}
+                                            >
+                                              💸 Pay {sm.name.split(" ")[0]}
+                                            </button>
+                                          ) : (
+                                            <span className="text-muted" style={{ fontSize: "0.78rem" }}>No UPI available</span>
+                                          )}
+                                        </span>
+                                      ))}
+                                    </span>
+                                  );
+                                }
+                                // Single slot or single sub-member: original behaviour
+                                const upi = subMembers.length === 1 ? subMembers[0].upi_id : viewCycleHistory.winner_slot.upi_id;
+                                const payeeName = subMembers.length === 1
+                                  ? subMembers[0].name
+                                  : (viewCycleHistory.winner_slot.display_name ?? viewCycleHistory.winner_slot.name);
+                                return upi ? (
+                                  <button className="btn btn-sm btn-primary" onClick={() => setShowPayModal({ payeeName, payeeUpiId: upi, amount: payNowTotal || group.installment_amount })}>
+                                    💸 Pay Now
+                                  </button>
+                                ) : isAdmin && (
+                                  <span className="text-muted" style={{ fontSize: "0.78rem" }}>No UPI ID — ask winner to update profile</span>
+                                );
+                              })()
                       )}
                     </span>
                   )
@@ -619,49 +565,11 @@ export default function GroupDashboardPage() {
           <div className="section-header">
             <h3>Contributors</h3>
             {isAdmin && (
-              <button className="btn btn-sm btn-secondary" onClick={() => { setAddingSlot(!addingSlot); setNewSlotName(""); setNewSlotLinkedUser(null); setSlotError(""); }}>
+              <button className="btn btn-sm btn-secondary" onClick={() => setShowAddModal(true)}>
                 + Add Contributor
               </button>
             )}
           </div>
-          {addingSlot && (
-            <div className="inline-form" style={{ flexDirection: "column", alignItems: "stretch", gap: "6px" }}>
-              {newSlotLinkedUser ? (
-                <div className="suggestion-selected">
-                  <span className="badge badge-registered">Registered</span>
-                  <span>{newSlotLinkedUser.display_name}</span>
-                  <span className="text-muted">{newSlotLinkedUser.email}</span>
-                  <button className="btn btn-sm btn-ghost" onClick={() => setNewSlotLinkedUser(null)}>✕ Clear</button>
-                </div>
-              ) : (
-                <>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <input
-                      ref={addInputRef}
-                      type="text"
-                      value={newSlotName}
-                      onChange={(e) => { setNewSlotName(e.target.value); setNewSlotLinkedUser(null); }}
-                      placeholder="Name, email or mobile number"
-                      className="input-sm"
-                      style={{ flex: 1 }}
-                    />
-                  </div>
-                  <UserSuggestion query={newSlotName} onSelect={(u) => { if (u) setNewSlotLinkedUser(u); }} />
-                </>
-              )}
-              <div style={{ display: "flex", gap: "8px" }}>
-                <button className="btn btn-sm btn-primary"
-                  onClick={() => handleAddSlot()}
-                  disabled={!newSlotName.trim() && !newSlotLinkedUser || addSlotMutation.isPending}>
-                  Add
-                </button>
-                <button className="btn btn-sm btn-ghost" onClick={() => { setAddingSlot(false); setSlotError(""); setNewSlotName(""); setNewSlotLinkedUser(null); }}>
-                  Cancel
-                </button>
-              </div>
-              {slotError && <p className="form-error">{slotError}</p>}
-            </div>
-          )}
           <div className="contributor-list">
             {slots.map((slot: any) => {
               const isWinnerSlot = slot.id === currentCycleWinnerSlotId;
@@ -684,16 +592,18 @@ export default function GroupDashboardPage() {
                       )}
                     </div>
                     <div className="contributor-actions">
-                      {isAdmin && !isRegistered && (
-                        <LinkAccountButton
-                          label="Link Account"
-                          onLink={(u) => setLinkConfirm({ type: "slot", slotId: slot.id, targetName: slot.name, user: u })}
-                        />
-                      )}
                       {isAdmin && (
                         <button className="btn btn-sm btn-ghost"
                           onClick={() => isExpanded ? setExpandedSlotId(null) : openSubMembers(slot)}>
                           {isExpanded ? "Close" : "Sub-members"}
+                        </button>
+                      )}
+                      {isAdmin && !isRegistered && (
+                        <button
+                          className="btn btn-sm btn-ghost"
+                          onClick={() => setEditTarget({ kind: "slot", slotId: slot.id, name: slot.name, mobile_number: slot.mobile_number ?? null, upi_id: slot.upi_id ?? null })}
+                        >
+                          Edit
                         </button>
                       )}
                       {isAdmin && (
@@ -720,82 +630,93 @@ export default function GroupDashboardPage() {
                           + Add
                         </button>
                       </div>
-                      {slot.sub_members?.length > 0 && (
-                        <div className="sub-member-existing">
-                          {slot.sub_members.map((sm: any) => (
-                            <div key={sm.id} className="sub-member-row" style={{ alignItems: "center" }}>
-                              <span style={{ flex: 2 }}>{sm.name}</span>
-                              <div style={{ width: "110px", flexShrink: 0, display: "flex", alignItems: "center", gap: "4px" }}>
-                                {sm.linked_user_id ? (
-                                  <span className="badge badge-registered" title={sm.linked_user_display_name ?? undefined}>Registered</span>
-                                ) : (
-                                  <>
-                                    <span className="badge badge-offline">Unregistered</span>
-                                    <LinkAccountButton
-                                      label="Link"
-                                      onLink={(u) => setLinkConfirm({ type: "sub-member", slotId: slot.id, subMemberId: sm.id, targetName: sm.name, user: u })}
-                                    />
-                                  </>
-                                )}
-                              </div>
-                              <span className="text-muted" style={{ flex: 1, textAlign: "right" }}>₹{sm.split_amount.toLocaleString()}</span>
-                            </div>
-                          ))}
-                          <hr style={{ margin: "8px 0", borderColor: "var(--border)" }} />
-                        </div>
-                      )}
-                      <p className="text-muted" style={{ fontSize: "0.8rem", marginBottom: "6px" }}>Edit splits below (replaces all sub-members):</p>
+                      <p className="text-muted" style={{ fontSize: "0.8rem", marginBottom: "6px" }}>
+                        {slot.sub_members?.length > 0
+                          ? "Edit or rearrange below — saving replaces all sub-members:"
+                          : "Add the people sharing this slot — each needs a name, amount and mobile:"}
+                      </p>
                       {subDrafts.map((draft, i) => (
-                        <div key={i} className="sub-member-row">
-                          <div style={{ position: "relative", flex: 2, minWidth: 0 }}>
-                            <input
-                              className="input-sm"
-                              style={{ width: "100%" }}
-                              type="text"
-                              placeholder="Name, email or mobile"
-                              value={draft.name}
-                              onChange={(e) => {
-                                const updated = [...subDrafts];
-                                updated[i] = { ...updated[i], name: e.target.value, linked_user_id: undefined };
-                                setSubDrafts(updated);
-                              }}
-                            />
-                            {!draft.linked_user_id && (
-                              <SubMemberSuggestion
-                                query={draft.name}
-                                onSelect={(u) => {
+                        <div key={i} style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "6px" }}>
+                          <div className="sub-member-row">
+                            <div style={{ position: "relative", flex: 2, minWidth: 0 }}>
+                              <input
+                                className="input-sm"
+                                style={{ width: "100%" }}
+                                type="text"
+                                placeholder="Name, email or mobile"
+                                value={draft.name}
+                                onChange={(e) => {
                                   const updated = [...subDrafts];
-                                  updated[i] = { ...updated[i], name: u.display_name ?? draft.name, linked_user_id: u.id };
+                                  updated[i] = { ...updated[i], name: e.target.value, linked_user_id: undefined };
                                   setSubDrafts(updated);
                                 }}
                               />
+                              {!draft.linked_user_id && (
+                                <SubMemberSuggestion
+                                  query={draft.name}
+                                  onSelect={(u) => {
+                                    const updated = [...subDrafts];
+                                    updated[i] = { ...updated[i], name: u.display_name ?? draft.name, linked_user_id: u.id };
+                                    setSubDrafts(updated);
+                                  }}
+                                />
+                              )}
+                            </div>
+                            <div style={{ width: "110px", flexShrink: 0 }}>
+                              {draft.linked_user_id ? (
+                                <span className="badge badge-registered">Registered</span>
+                              ) : (
+                                <span className="badge badge-offline" style={{ opacity: 0.6 }}>Unregistered</span>
+                              )}
+                            </div>
+                            <input
+                              className="input-sm"
+                              style={{ flex: 1 }}
+                              type="number"
+                              min="0"
+                              placeholder="Amount"
+                              value={draft.split_amount}
+                              onChange={(e) => {
+                                const updated = [...subDrafts];
+                                updated[i] = { ...updated[i], split_amount: e.target.value };
+                                setSubDrafts(updated);
+                              }}
+                            />
+                            {subDrafts.length > 1 && (
+                              <button className="btn btn-sm btn-ghost" style={{ color: "var(--danger)" }}
+                                onClick={() => setSubDrafts(subDrafts.filter((_, j) => j !== i))}>
+                                ✕
+                              </button>
                             )}
                           </div>
-                          <div style={{ width: "110px", flexShrink: 0 }}>
-                            {draft.linked_user_id ? (
-                              <span className="badge badge-registered">Registered</span>
-                            ) : (
-                              <span className="badge badge-offline" style={{ opacity: 0.6 }}>Unregistered</span>
-                            )}
-                          </div>
-                          <input
-                            className="input-sm"
-                            style={{ flex: 1 }}
-                            type="number"
-                            min="0"
-                            placeholder="Amount"
-                            value={draft.split_amount}
-                            onChange={(e) => {
-                              const updated = [...subDrafts];
-                              updated[i] = { ...updated[i], split_amount: e.target.value };
-                              setSubDrafts(updated);
-                            }}
-                          />
-                          {subDrafts.length > 1 && (
-                            <button className="btn btn-sm btn-ghost" style={{ color: "var(--danger)" }}
-                              onClick={() => setSubDrafts(subDrafts.filter((_, j) => j !== i))}>
-                              ✕
-                            </button>
+                          {/* Mobile + UPI required for offline sub-members */}
+                          {!draft.linked_user_id && draft.name.trim() && (
+                            <div style={{ display: "flex", gap: "6px", paddingLeft: "4px" }}>
+                              <input
+                                className="input-sm"
+                                style={{ flex: 1 }}
+                                type="tel"
+                                placeholder="Mobile number (required)"
+                                value={draft.mobile_number ?? ""}
+                                onChange={(e) => {
+                                  const updated = [...subDrafts];
+                                  updated[i] = { ...updated[i], mobile_number: e.target.value };
+                                  setSubDrafts(updated);
+                                }}
+                              />
+                              <input
+                                className="input-sm"
+                                style={{ flex: 1 }}
+                                type="text"
+                                placeholder="UPI ID (optional)"
+                                value={draft.upi_id ?? ""}
+                                onChange={(e) => {
+                                  const updated = [...subDrafts];
+                                  updated[i] = { ...updated[i], upi_id: e.target.value };
+                                  setSubDrafts(updated);
+                                }}
+                              />
+                            </div>
                           )}
                         </div>
                       ))}
@@ -820,28 +741,7 @@ export default function GroupDashboardPage() {
             })}
           </div>
 
-          {/* Admin-only users (admins not linked to any contributor slot) */}
-          {(() => {
-            const adminOnlyUsers = (group.admin_users ?? []).filter(
-              (a) => !slots.some((s: any) => s.linked_user_id === a.id)
-            );
-            if (adminOnlyUsers.length === 0) return null;
-            return (
-              <div style={{ marginTop: "1rem" }}>
-                <p className="text-muted" style={{ fontSize: "0.82rem", marginBottom: "6px" }}>Group admins (not contributors)</p>
-                {adminOnlyUsers.map((a) => (
-                  <div key={a.id} className="contributor-block">
-                    <div className="contributor-row">
-                      <div className="contributor-info">
-                        <span className="contributor-name">{a.display_name ?? "Admin"}</span>
-                        <span className="badge badge-registered" style={{ marginLeft: "6px" }}>Admin</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            );
-          })()}
+
         </div>
       )}
 
@@ -946,6 +846,36 @@ export default function GroupDashboardPage() {
                   disabled={winnerDeclared}
                 />
               </div>
+              <div className="form-group">
+                <label>
+                  Fund Start Month/Year
+                  {winnerDeclared && <span className="hint"> — locked after first draw 🔒</span>}
+                </label>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <select
+                    value={settingStartMonth}
+                    onChange={(e) => setSettingStartMonth(e.target.value)}
+                    disabled={winnerDeclared}
+                    style={{ flex: 1 }}
+                  >
+                    <option value="">Month (optional)</option>
+                    {["January","February","March","April","May","June","July","August","September","October","November","December"].map((m, i) => (
+                      <option key={i + 1} value={String(i + 1)}>{m}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={settingStartYear}
+                    onChange={(e) => setSettingStartYear(e.target.value)}
+                    disabled={winnerDeclared}
+                    style={{ flex: 1 }}
+                  >
+                    <option value="">Year (optional)</option>
+                    {Array.from({ length: 11 }, (_, i) => new Date().getFullYear() - 5 + i).map((y) => (
+                      <option key={y} value={String(y)}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               {settingError && <p className="form-error">{settingError}</p>}
               <div className="btn-group">
                 <button className="btn btn-primary" onClick={saveSettings} disabled={settingSaving}>
@@ -979,6 +909,25 @@ export default function GroupDashboardPage() {
       )}
 
       {/* Modals — always rendered outside tabs (Task 7.2) */}
+      {showAddModal && (
+        <AddContributorModal
+          groupId={groupId}
+          installmentAmount={group.installment_amount}
+          slots={slots}
+          onClose={() => setShowAddModal(false)}
+          onSuccess={() => setShowAddModal(false)}
+        />
+      )}
+
+      {editTarget && (
+        <EditContributorModal
+          groupId={groupId}
+          target={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSuccess={() => setEditTarget(null)}
+        />
+      )}
+
       {showDraw && (
         <DrawModal
           groupId={groupId}
@@ -994,47 +943,18 @@ export default function GroupDashboardPage() {
         />
       )}
 
-      {showPayModal && currentCycleHistory?.winner_slot?.upi_id && (
+      {showPayModal && showPayModal.payeeUpiId && (
         <UpiPaymentModal
-          winnerName={currentCycleHistory.winner_slot.display_name ?? currentCycleHistory.winner_slot.name}
-          winnerUpiId={currentCycleHistory.winner_slot.upi_id}
-          amount={payNowTotal || group.installment_amount}
+          winnerName={showPayModal.payeeName}
+          winnerUpiId={showPayModal.payeeUpiId}
+          amount={showPayModal.amount}
           groupName={group.name}
           cycleNumber={group.current_cycle}
           breakdown={payNowBreakdown.length > 1 ? payNowBreakdown : undefined}
-          onClose={() => setShowPayModal(false)}
+          onClose={() => setShowPayModal(null)}
         />
       )}
 
-      {/* Link-account confirmation modal */}
-      {linkConfirm && (
-        <div className="modal-overlay" onClick={() => { if (!linkPending) setLinkConfirm(null); }}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Confirm Account Link</h3>
-              <button className="modal-close" onClick={() => setLinkConfirm(null)} disabled={linkPending}>×</button>
-            </div>
-            <div className="modal-body">
-              <p>You are about to link <strong>{linkConfirm.targetName}</strong> to the registered account:</p>
-              <div className="suggestion-selected" style={{ margin: "12px 0" }}>
-                <span className="badge badge-registered">Registered</span>
-                <span><strong>{linkConfirm.user.display_name}</strong></span>
-                <span className="text-muted">{linkConfirm.user.email}</span>
-              </div>
-              <p className="text-muted" style={{ fontSize: "0.85rem" }}>
-                Once linked, this user will immediately see historical and current cycles for this contributor.
-              </p>
-              {linkError && <p className="form-error">{linkError}</p>}
-              <div className="btn-group mt-2">
-                <button className="btn btn-ghost" onClick={() => setLinkConfirm(null)} disabled={linkPending}>Cancel</button>
-                <button className="btn btn-primary" onClick={confirmLink} disabled={linkPending}>
-                  {linkPending ? "Linking…" : "Confirm Link"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

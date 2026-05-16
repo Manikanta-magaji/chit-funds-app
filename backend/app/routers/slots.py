@@ -70,12 +70,16 @@ def _user_already_in_group(
 class SlotCreateRequest(BaseModel):
     name: str
     linked_user_id: Optional[int] = None
+    mobile_number: Optional[str] = None
+    upi_id: Optional[str] = None
 
 
 class SubMemberInput(BaseModel):
     name: str
     linked_user_id: Optional[int] = None
     split_amount: float
+    mobile_number: Optional[str] = None
+    upi_id: Optional[str] = None
 
 
 class SubMembersUpdateRequest(BaseModel):
@@ -114,6 +118,8 @@ def add_slot(
         name=body.name,
         is_offline=is_offline,
         linked_user_id=body.linked_user_id,
+        mobile_number=(body.mobile_number or "").strip() or None,
+        upi_id=(body.upi_id or "").strip() or None,
     )
     db.add(slot)
     db.commit()
@@ -132,6 +138,8 @@ def add_slot(
         "is_offline": slot.is_offline,
         "linked_user_id": slot.linked_user_id,
         "linked_user_display_name": linked_user_display_name,
+        "mobile_number": slot.mobile_number,
+        "upi_id": slot.upi_id,
         "sub_members": [],
         "duplicate_user_warning": duplicate_user_warning,
     }
@@ -193,6 +201,8 @@ def list_slots(
             "is_offline": slot.is_offline,
             "linked_user_id": slot.linked_user_id,
             "linked_user_display_name": linked_user_display_name,
+            "mobile_number": slot.mobile_number,
+            "upi_id": slot.upi_id,
             "sub_members": [
                 {
                     "id": sm.id,
@@ -203,6 +213,8 @@ def list_slots(
                         if sm.linked_user_id and sm.linked_user else None
                     ),
                     "split_amount": sm.split_amount,
+                    "mobile_number": sm.mobile_number,
+                    "upi_id": sm.upi_id,
                 }
                 for sm in slot.sub_members
             ],
@@ -240,11 +252,19 @@ def set_sub_members(
     db.flush()
 
     for sm_data in body.sub_members:
+        is_offline_sm = sm_data.linked_user_id is None
+        if is_offline_sm and not (sm_data.mobile_number or "").strip():
+            raise HTTPException(
+                status_code=422,
+                detail=f"Mobile number is required for offline sub-member '{sm_data.name}'.",
+            )
         sm = SubMember(
             slot_id=slot.id,
             name=sm_data.name,
             linked_user_id=sm_data.linked_user_id,
             split_amount=sm_data.split_amount,
+            mobile_number=(sm_data.mobile_number or "").strip() or None,
+            upi_id=(sm_data.upi_id or "").strip() or None,
         )
         db.add(sm)
 
@@ -267,6 +287,8 @@ def set_sub_members(
         "is_offline": slot.is_offline,
         "linked_user_id": slot.linked_user_id,
         "linked_user_display_name": linked_user_display_name,
+        "mobile_number": slot.mobile_number,
+        "upi_id": slot.upi_id,
         "sub_members": [
             {
                 "id": sm.id,
@@ -277,6 +299,8 @@ def set_sub_members(
                     if sm.linked_user_id and sm.linked_user else None
                 ),
                 "split_amount": sm.split_amount,
+                "mobile_number": sm.mobile_number,
+                "upi_id": sm.upi_id,
             }
             for sm in slot.sub_members
         ],
@@ -308,6 +332,92 @@ def link_slot_to_user(
     slot.is_offline = False
     db.commit()
     return {"message": "Slot linked to user."}
+
+
+
+# ---------------------------------------------------------------------------
+# Update a contributor slot (name / mobile / UPI)
+# ---------------------------------------------------------------------------
+
+class SlotUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    mobile_number: Optional[str] = None
+    upi_id: Optional[str] = None
+
+
+@router.patch("/{group_id}/slots/{slot_id}")
+def update_slot(
+    group_id: int,
+    slot_id: int,
+    body: SlotUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_complete_profile),
+):
+    _get_group_or_404(db, group_id)
+    _require_admin(db, group_id, current_user.id)
+    slot = _get_slot_or_404(db, group_id, slot_id)
+
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="Name cannot be empty.")
+        slot.name = name
+    if body.mobile_number is not None:
+        slot.mobile_number = body.mobile_number.strip() or None
+    if body.upi_id is not None:
+        slot.upi_id = body.upi_id.strip() or None
+
+    db.commit()
+    return {"message": "Slot updated.", "id": slot.id}
+
+
+# ---------------------------------------------------------------------------
+# Update an individual sub-member (name / mobile / UPI / split_amount)
+# ---------------------------------------------------------------------------
+
+class SubMemberUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    mobile_number: Optional[str] = None
+    upi_id: Optional[str] = None
+    split_amount: Optional[float] = None
+
+
+@router.patch("/{group_id}/slots/{slot_id}/sub-members/{sub_member_id}")
+def update_sub_member(
+    group_id: int,
+    slot_id: int,
+    sub_member_id: int,
+    body: SubMemberUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_complete_profile),
+):
+    _get_group_or_404(db, group_id)
+    _require_admin(db, group_id, current_user.id)
+    _get_slot_or_404(db, group_id, slot_id)
+
+    sub_member = db.query(SubMember).filter(
+        SubMember.id == sub_member_id,
+        SubMember.slot_id == slot_id,
+    ).first()
+    if not sub_member:
+        raise HTTPException(status_code=404, detail="Sub-member not found.")
+
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="Name cannot be empty.")
+        sub_member.name = name
+    if body.mobile_number is not None:
+        sub_member.mobile_number = body.mobile_number.strip() or None
+    if body.upi_id is not None:
+        sub_member.upi_id = body.upi_id.strip() or None
+    if body.split_amount is not None:
+        if body.split_amount <= 0:
+            raise HTTPException(status_code=422, detail="Split amount must be positive.")
+        sub_member.split_amount = body.split_amount
+
+    db.commit()
+    return {"message": "Sub-member updated.", "id": sub_member.id}
 
 
 # ---------------------------------------------------------------------------

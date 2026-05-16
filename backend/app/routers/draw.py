@@ -15,6 +15,17 @@ from app.models.models import (
 router = APIRouter()
 
 
+def _resolve_upi(linked_user, explicit_upi: str | None, mobile: str | None) -> str | None:
+    """Resolve effective UPI handle: linked user UPI > explicit offline UPI > mobile@upi."""
+    if linked_user and linked_user.upi_id:
+        return linked_user.upi_id
+    if explicit_upi:
+        return explicit_upi
+    if mobile:
+        return f"{mobile}@upi"
+    return None
+
+
 def _require_admin(db: Session, group_id: int, user_id: int):
     if not db.query(GroupAdmin).filter(
         GroupAdmin.group_id == group_id,
@@ -304,11 +315,22 @@ def draw_history(
             ws = db.query(ContributorSlot).filter(ContributorSlot.id == cycle.winner_slot_id).first()
             if ws:
                 linked_user = db.query(User).filter(User.id == ws.linked_user_id).first() if ws.linked_user_id else None
+                # Build sub-member payout details when slot has sub-members
+                sub_members_out = []
+                for sm in (ws.sub_members or []):
+                    sm_linked_user = db.query(User).filter(User.id == sm.linked_user_id).first() if sm.linked_user_id else None
+                    sub_members_out.append({
+                        "id": sm.id,
+                        "name": sm.name,
+                        "upi_id": _resolve_upi(sm_linked_user, sm.upi_id, sm.mobile_number),
+                        "share_amount": sm.split_amount,
+                    })
                 winner_slot = {
                     "id": ws.id,
                     "name": ws.name,
-                    "upi_id": linked_user.upi_id if linked_user else None,
+                    "upi_id": _resolve_upi(linked_user, ws.upi_id, ws.mobile_number),
                     "display_name": linked_user.display_name if linked_user else ws.name,
+                    "sub_members": sub_members_out,
                 }
         # Auto-derive payout status: completed when all non-winner slots have paid
         if cycle.winner_slot_id:
