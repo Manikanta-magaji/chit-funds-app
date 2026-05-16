@@ -557,14 +557,14 @@ export default function GroupDashboardPage() {
                   {/* Main row */}
                   <div className="contributor-row">
                     <div className="contributor-info">
-                      <span className="contributor-name">{slot.name}</span>
+                      <span className="contributor-name">{slot.linked_user_display_name ?? slot.name}</span>
                       {isWinnerSlot && <span title="Prize winner this cycle" style={{ marginLeft: "4px" }}>🏆</span>}
                       {slot.sub_members?.length > 1 && (
                         <span className="badge badge-split">{slot.sub_members.length} sub-members</span>
                       )}
                     </div>
                     <div className="contributor-actions">
-                      {isAdmin && slot.sub_members?.length > 0 && (
+                      {slot.sub_members?.length > 0 && (
                         <button className="btn btn-sm btn-ghost"
                           onClick={() => isExpanded ? collapseSubMembers(slot.id) : expandSubMembers(slot.id)}>
                           {isExpanded ? "Close" : "Sub-members"}
@@ -593,12 +593,12 @@ export default function GroupDashboardPage() {
                   </div>
 
                   {/* Sub-member section */}
-                  {isExpanded && isAdmin && (
+                  {isExpanded && slot.sub_members?.length > 0 && (
                     <div className="sub-member-editor">
                       <div className="sub-member-header">
                         <span className="sub-header-label">Sub-members</span>
                         <div style={{ display: "flex", gap: "4px" }}>
-                          {slot.sub_members?.length > 0 && editingSubsSlotId !== slot.id && (
+                          {isAdmin && slot.sub_members?.length > 0 && editingSubsSlotId !== slot.id && (
                             <button className="btn btn-sm btn-ghost"
                               onClick={() => {
                                 setEditingSubsSlotId(slot.id);
@@ -698,7 +698,7 @@ export default function GroupDashboardPage() {
                       {/* View mode: name-only read-only rows */}
                       {editingSubsSlotId !== slot.id && (slot.sub_members ?? []).map((sm: any) => (
                         <div key={sm.id} className="sub-member-row">
-                          <span style={{ flex: 1 }}>{sm.name}</span>
+                          <span style={{ flex: 1 }}>{sm.linked_user_display_name ?? sm.name}</span>
                         </div>
                       ))}
 

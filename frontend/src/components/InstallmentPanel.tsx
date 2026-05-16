@@ -95,6 +95,16 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
     .filter((s: any) => s.linked_user_id === user!.id)
     .map((s: any) => s.id);
 
+  // Display name lookups: prefer linked_user_display_name over the admin-typed name
+  const slotDisplayName = new Map<number, string>(
+    slots.map((s: any) => [s.id, s.linked_user_display_name ?? s.name])
+  );
+  const subMemberDisplayName = new Map<number, string>(
+    slots.flatMap((s: any) =>
+      ((s.sub_members ?? []) as any[]).map((sm: any) => [sm.id, sm.linked_user_display_name ?? sm.name])
+    )
+  );
+
   // All positions (primary slots + sub-member entries) belonging to the current user
   const myPrimaryPositions = slots.filter((s: any) => s.linked_user_id === user!.id);
   const mySubMemberPositions = slots.flatMap((s: any) =>
@@ -209,7 +219,7 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
                             {isExpanded ? "▾" : "▸"}
                           </button>
                         )}
-                        <span className="fw-600">{item.slot_name}</span>
+                        <span className="fw-600">{slotDisplayName.get(item.slot_id) ?? item.slot_name}</span>
                         {isWinner && <span className="badge badge-winner ml-1">🏆 Winner</span>}
                       </td>
                       <td>
@@ -254,7 +264,7 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
                         <tr key={`sm-${sm.id}`} className="sub-member-payment-row">
                           <td>
                             <span className="sub-indent">↳</span>
-                            {sm.name}
+                            {subMemberDisplayName.get(sm.id) ?? sm.name}
                             <span className="text-muted small ml-1">₹{sm.split_amount.toLocaleString()}</span>
                           </td>
                           <td>

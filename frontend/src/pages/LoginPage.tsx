@@ -71,9 +71,8 @@ export default function LoginPage() {
           Continue with Google
         </a>
 
-        <p className="auth-footer">
-          Don't have an account? <Link to="/register">Create one</Link>
-        </p>
+        <p className="auth-footer">Don't have an account?</p>
+        <Link to="/register" className="btn btn-secondary btn-full">Create one</Link>
       </div>
     </div>
   );
