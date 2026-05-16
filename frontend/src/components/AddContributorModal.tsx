@@ -293,6 +293,7 @@ export default function AddContributorModal({ groupId, installmentAmount, slots,
                         query={draft.name}
                         hide={draft.dismissed}
                         onSelect={(u) => {
+                          if (!u) return;
                           const updated = [...subDrafts];
                           updated[i] = {
                             ...updated[i],

@@ -1,19 +1,10 @@
 import { useState, useRef, useEffect } from "react";
-
-function useDebounce<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState<T>(value);
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(t);
-  }, [value, delay]);
-  return debounced;
-}
 import { useParams, Link, useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getGroup, listSlots, getDrawHistory, removeSlot, advanceCycle,
-  setSubMembers, searchUsers, deleteGroup,
-  getInstallments, updateGroupSettings, grantAdmin, revokeAdmin, updateSubMember, removeSubMember,
+  setSubMembers, deleteGroup,
+  getInstallments, updateGroupSettings, grantAdmin, revokeAdmin,
 } from "../api/endpoints";
 import { useAuth } from "../context/AuthContext";
 import DrawModal from "../components/DrawModal";
