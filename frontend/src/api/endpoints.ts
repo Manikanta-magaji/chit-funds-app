@@ -51,6 +51,8 @@ export const updateSubMember = (
   subMemberId: number,
   data: { name?: string; mobile_number?: string; upi_id?: string; split_amount?: number },
 ) => api.patch(`/groups/${groupId}/slots/${slotId}/sub-members/${subMemberId}`, data).then((r) => r.data);
+export const removeSubMember = (groupId: number, slotId: number, subMemberId: number) =>
+  api.delete(`/groups/${groupId}/slots/${slotId}/sub-members/${subMemberId}`).then((r) => r.data);
 export const setSubMembers = (
   groupId: number,
   slotId: number,

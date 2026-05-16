@@ -54,6 +54,27 @@ The Contributors tab SHALL display the full contributor slot list including sub-
 - **WHEN** an admin views the Contributors tab
 - **THEN** there is no Admin Management section visible; it is only accessible via the Settings tab
 
+#### Scenario: Add Contributor button checks capacity before opening modal
+- **WHEN** an admin clicks Add Contributor and the group already has a slot for every cycle (slots.length >= total_cycles)
+- **THEN** an inline error is shown and the Add Contributor modal does NOT open
+
+#### Scenario: Sub-member edit mode shows single-row inputs with total
+- **WHEN** an admin clicks Edit in the sub-member section of a slot
+- **THEN** all sub-members enter edit mode simultaneously, each displayed as a single flex row of inputs (name, mobile, UPI, amount)
+- **AND** a live split total indicator is shown; Save is disabled while the total does not match the installment amount
+- **AND** a "+ Add Sub-member" button is visible in edit mode so the admin can add additional sub-members
+
+#### Scenario: +Split form matches edit mode layout
+- **WHEN** an admin clicks "+Split" on a slot with no sub-members
+- **THEN** each draft row is shown as a single flex row (name · mobile · UPI · amount), consistent with edit mode
+- **AND** the first draft row is pre-populated with the slot's existing name and mobile number
+
+#### Scenario: Remove sub-member only available in edit mode
+- **WHEN** a slot's sub-member section is in view mode
+- **THEN** no Remove button is visible on any sub-member row
+- **WHEN** the admin clicks Edit to enter edit mode
+- **THEN** Remove buttons appear on offline sub-member rows and removing a row immediately updates the displayed total
+
 ### Requirement: History tab content
 The History tab SHALL display the Prize History table and, for admins, the Draw Prize and Next Cycle action buttons.
 

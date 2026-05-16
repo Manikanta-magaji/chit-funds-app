@@ -467,6 +467,7 @@ a:hover { text-decoration: underline; }
   line-height: 1;
 }
 .modal-body { padding: 1.5rem; }
+.modal-footer { padding: 0 1.5rem 1rem; }
 
 /* Draw */
 .tab-bar { display: flex; gap: .25rem; margin-bottom: 1.25rem; }
@@ -542,6 +543,7 @@ a:hover { text-decoration: underline; }
   margin-bottom: .4rem;
 }
 .contributor-block-winner { border-color: #fde68a; background: #fffdf0; }
+.contributor-block-registered { background: #f0fdf4; }
 .contributor-block .contributor-row {
   border: none;
   border-radius: 0;
@@ -552,10 +554,10 @@ a:hover { text-decoration: underline; }
 .sub-member-editor {
   border-top: 1px solid var(--border);
   background: var(--bg);
-  padding: .75rem 1rem;
+  padding: .5rem .75rem;
   display: flex;
   flex-direction: column;
-  gap: .5rem;
+  gap: .3rem;
 }
 .sub-member-header {
   display: flex;

@@ -13,7 +13,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getGroup, listSlots, getDrawHistory, removeSlot, advanceCycle,
   setSubMembers, searchUsers, deleteGroup,
-  getInstallments, updateGroupSettings, grantAdmin, revokeAdmin,
+  getInstallments, updateGroupSettings, grantAdmin, revokeAdmin, updateSubMember, removeSubMember,
 } from "../api/endpoints";
 import { useAuth } from "../context/AuthContext";
 import DrawModal from "../components/DrawModal";
@@ -23,34 +23,7 @@ import AddContributorModal from "../components/AddContributorModal";
 import EditContributorModal from "../components/EditContributorModal";
 import UserSuggestion from "../components/UserSuggestion";
 import type { User } from "../api/types";
-
-interface SubMemberDraft {
-  name: string;
-  split_amount: string;
-  linked_user_id?: number;
-  mobile_number?: string;
-  upi_id?: string;
-}
-
-function SubMemberSuggestion({ query, onSelect }: { query: string; onSelect: (u: User) => void }) {
-  const debouncedQuery = useDebounce(query, 500);
-  const { data: matches = [] } = useQuery({
-    queryKey: ["user-search", debouncedQuery],
-    queryFn: () => searchUsers(debouncedQuery),
-    enabled: debouncedQuery.trim().length > 0,
-  });
-  if (!query.trim() || matches.length === 0) return null;
-  return (
-    <div className="suggestion-list" style={{ position: "absolute", zIndex: 10, top: "100%", left: 0, right: 0 }}>
-      {matches.map((u) => (
-        <button key={u.id} type="button" className="suggestion-item" onClick={() => onSelect(u)}>
-          <span className="suggestion-name">{u.display_name}</span>
-          <span className="suggestion-email text-muted">{[u.mobile_number, u.email].filter(Boolean).join(" · ")}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
+import { normalizeMobile } from "../utils/normalizeMobile";
 
 function AdminManagementSection({
   groupId,
@@ -199,10 +172,12 @@ export default function GroupDashboardPage() {
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
 
   // Sub-member editing state
-  const [expandedSlotId, setExpandedSlotId] = useState<number | null>(null);
-  const [subDrafts, setSubDrafts] = useState<SubMemberDraft[]>([]);
-  const [subError, setSubError] = useState("");
-  const [subSaving, setSubSaving] = useState(false);
+  const [expandedSlotIds, setExpandedSlotIds] = useState<Set<number>>(new Set());
+  const [editingSubsSlotId, setEditingSubsSlotId] = useState<number | null>(null);
+  const [editSubsDrafts, setEditSubsDrafts] = useState<{ id: number; name: string; mobile_number: string; upi_id: string; split_amount: string; isRegistered: boolean; linked_user_id?: number }[]>([]);
+  const [editSubsSaving, setEditSubsSaving] = useState(false);
+  const [editSubsError, setEditSubsError] = useState("");
+  const [addContributorError, setAddContributorError] = useState("");
 
   const { data: group, isLoading } = useQuery({
     queryKey: ["group", groupId],
@@ -257,40 +232,51 @@ export default function GroupDashboardPage() {
     onError: (err: any) => alert(err.response?.data?.detail || "Cannot advance cycle."),
   });
 
-  const openSubMembers = (slot: any) => {
-    const drafts: SubMemberDraft[] =
-      slot.sub_members?.length > 0
-        ? slot.sub_members.map((sm: any) => ({
-            name: sm.name,
-            split_amount: String(sm.split_amount),
-            linked_user_id: sm.linked_user_id,
-          }))
-        : [{ name: slot.name, split_amount: group ? String(group.installment_amount) : "" }];
-    setSubDrafts(drafts);
-    setSubError("");
-    setExpandedSlotId(slot.id);
+  const expandSubMembers = (slotId: number) =>
+    setExpandedSlotIds(prev => new Set([...prev, slotId]));
+
+  const collapseSubMembers = (slotId: number) => {
+    setExpandedSlotIds(prev => { const n = new Set(prev); n.delete(slotId); return n; });
   };
 
-  const saveSubMembers = async (slotId: number) => {
-    setSubError("");
-    const total = subDrafts.reduce((s, d) => s + parseFloat(d.split_amount || "0"), 0);
+  const saveSubMemberEdits = async (slotId: number) => {
     if (!group) return;
+    if (editSubsDrafts.length === 0) {
+      setEditSubsError("At least one sub-member is required.");
+      return;
+    }
+    const total = editSubsDrafts.reduce((s, d) => s + parseFloat(d.split_amount || "0"), 0);
     if (Math.abs(total - group.installment_amount) > 0.01) {
-      setSubError(`Split total ₹${total} must equal installment amount ₹${group.installment_amount}.`);
+      setEditSubsError(`Split total ₹${total.toLocaleString()} must equal ₹${group.installment_amount.toLocaleString()}.`);
       return;
     }
-    if (subDrafts.some((d) => !d.name.trim())) {
-      setSubError("All sub-members need a name.");
+    if (editSubsDrafts.some((d) => !d.isRegistered && !d.name.trim())) {
+      setEditSubsError("All sub-members need a name.");
       return;
     }
-    const offlineWithoutMobile = subDrafts.find((d) => !d.linked_user_id && !d.mobile_number?.trim());
+    const offlineWithoutMobile = editSubsDrafts.find((d) => !d.isRegistered && !d.mobile_number?.trim());
     if (offlineWithoutMobile) {
-      setSubError(`Mobile number is required for offline sub-member "${offlineWithoutMobile.name || "(unnamed)"}".`);
+      setEditSubsError(`Mobile number is required for "${offlineWithoutMobile.name || "(unnamed)"}"`);
       return;
     }
-    setSubSaving(true);
+    // Normalize mobile numbers
+    const normalized: typeof editSubsDrafts = [];
+    for (const d of editSubsDrafts) {
+      if (d.isRegistered || !d.mobile_number?.trim()) {
+        normalized.push(d);
+      } else {
+        const norm = normalizeMobile(d.mobile_number);
+        if (!norm) {
+          setEditSubsError(`"${d.mobile_number}" is not a valid 10-digit mobile number for "${d.name}".`);
+          return;
+        }
+        normalized.push({ ...d, mobile_number: norm });
+      }
+    }
+    setEditSubsSaving(true);
+    setEditSubsError("");
     try {
-      await setSubMembers(groupId, slotId, subDrafts.map((d) => ({
+      await setSubMembers(groupId, slotId, normalized.map((d) => ({
         name: d.name.trim(),
         split_amount: parseFloat(d.split_amount),
         linked_user_id: d.linked_user_id,
@@ -298,11 +284,12 @@ export default function GroupDashboardPage() {
         upi_id: d.linked_user_id ? undefined : d.upi_id?.trim() || undefined,
       })));
       qc.invalidateQueries({ queryKey: ["slots", groupId] });
-      setExpandedSlotId(null);
-    } catch (err: any) {
-      setSubError(err.response?.data?.detail || "Failed to save.");
+      setEditingSubsSlotId(null);
+      setEditSubsDrafts([]);
+    } catch (e: any) {
+      setEditSubsError(e.response?.data?.detail || "Failed to save.");
     } finally {
-      setSubSaving(false);
+      setEditSubsSaving(false);
     }
   };
 
@@ -355,29 +342,16 @@ export default function GroupDashboardPage() {
   const payNowTotal = myPayNowPositions.reduce((sum, p) => sum + p.amount, 0);
   const payNowBreakdown = myPayNowPositions;
 
-  /** Returns true if userId is already linked to any slot or sub-member in the group. */
-  const isUserAlreadyInGroup = (userId: number, excludeSlotId?: number): boolean => {
-    return slots.some((s: any) => {
-      if (excludeSlotId !== undefined && s.id === excludeSlotId) return false;
-      if (s.linked_user_id === userId) return true;
-      return (s.sub_members ?? []).some((sm: any) => sm.linked_user_id === userId);
-    });
-  };
-
-  const saveSubMembersWithCheck = async (slotId: number) => {
-    const duplicates = subDrafts.filter(
-      (d) => d.linked_user_id && isUserAlreadyInGroup(d.linked_user_id, slotId)
-    );
-    if (
-      duplicates.length > 0 &&
-      !window.confirm(
-        `${duplicates.length === 1 ? "One sub-member is" : `${duplicates.length} sub-members are`} already linked elsewhere in this group. Save anyway?`
-      )
-    ) {
-      return;
+  // Auto-expand slots with sub-members when Contributors tab is active
+  useEffect(() => {
+    if (activeTab === "contributors" && slots.length > 0) {
+      setExpandedSlotIds(new Set(
+        slots
+          .filter((s: any) => (s.sub_members?.length ?? 0) > 0)
+          .map((s: any) => s.id)
+      ));
     }
-    await saveSubMembers(slotId);
-  };
+  }, [activeTab, slots]);
 
   if (isLoading) return <div className="page-container"><div className="loading">Loading…</div></div>;
   if (!group) return <div className="page-container"><p>Group not found.</p></div>;
@@ -428,8 +402,6 @@ export default function GroupDashboardPage() {
   };
 
   const installmentTotal = group.installment_amount;
-  const splitTotal = subDrafts.reduce((s, d) => s + parseFloat(d.split_amount || "0"), 0);
-  const splitValid = Math.abs(splitTotal - installmentTotal) < 0.01;
 
   return (
     <div className="page-container">
@@ -497,7 +469,10 @@ export default function GroupDashboardPage() {
                           : installmentsFetched && payNowTotal === 0
                             ? <span className="text-muted" style={{ fontSize: "0.85rem" }}>✓ All payments cleared</span>
                             : (() => {
-                                const subMembers = viewCycleHistory.winner_slot.sub_members ?? [];
+                                // Use live slot data (always fresh after edits) rather than
+                                // the draw-history snapshot, so UPI changes show immediately.
+                                const liveWinnerSlot = slots.find((s: any) => s.id === viewCycleWinnerSlotId);
+                                const subMembers: any[] = liveWinnerSlot?.sub_members ?? [];
                                 if (subMembers.length > 1) {
                                   // Multi-sub-member: one Pay Now per sub-member
                                   const perShare = payNowTotal > 0 ? payNowTotal / subMembers.length : group.installment_amount / subMembers.length;
@@ -521,11 +496,11 @@ export default function GroupDashboardPage() {
                                     </span>
                                   );
                                 }
-                                // Single slot or single sub-member: original behaviour
-                                const upi = subMembers.length === 1 ? subMembers[0].upi_id : viewCycleHistory.winner_slot.upi_id;
+                                // Single slot or single sub-member
+                                const upi = subMembers.length === 1 ? subMembers[0].upi_id : liveWinnerSlot?.upi_id;
                                 const payeeName = subMembers.length === 1
                                   ? subMembers[0].name
-                                  : (viewCycleHistory.winner_slot.display_name ?? viewCycleHistory.winner_slot.name);
+                                  : (liveWinnerSlot?.display_name ?? liveWinnerSlot?.name ?? viewCycleHistory.winner_slot.name);
                                 return upi ? (
                                   <button className="btn btn-sm btn-primary" onClick={() => setShowPayModal({ payeeName, payeeUpiId: upi, amount: payNowTotal || group.installment_amount })}>
                                     💸 Pay Now
@@ -565,36 +540,41 @@ export default function GroupDashboardPage() {
           <div className="section-header">
             <h3>Contributors</h3>
             {isAdmin && (
-              <button className="btn btn-sm btn-secondary" onClick={() => setShowAddModal(true)}>
-                + Add Contributor
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                <button className="btn btn-sm btn-secondary" onClick={() => {
+                  if (slots.length >= group.total_cycles) {
+                    setAddContributorError("Group is full — remove a slot to add another.");
+                  } else {
+                    setAddContributorError("");
+                    setShowAddModal(true);
+                  }
+                }}>
+                  + Add Contributor
+                </button>
+                {addContributorError && <span style={{ color: "var(--danger)", fontSize: ".85rem" }}>{addContributorError}</span>}
+              </div>
             )}
           </div>
           <div className="contributor-list">
             {slots.map((slot: any) => {
               const isWinnerSlot = slot.id === currentCycleWinnerSlotId;
-              const isExpanded = expandedSlotId === slot.id;
+              const isExpanded = expandedSlotIds.has(slot.id);
               const isRegistered = !!slot.linked_user_id;
               return (
-                <div key={slot.id} className={`contributor-block${isWinnerSlot ? " contributor-block-winner" : ""}`}>
+                <div key={slot.id} className={`contributor-block${isWinnerSlot ? " contributor-block-winner" : ""}${isRegistered && !isWinnerSlot ? " contributor-block-registered" : ""}`}>
                   {/* Main row */}
                   <div className="contributor-row">
                     <div className="contributor-info">
                       <span className="contributor-name">{slot.name}</span>
                       {isWinnerSlot && <span title="Prize winner this cycle" style={{ marginLeft: "4px" }}>🏆</span>}
-                      {isRegistered ? (
-                        <span className="badge badge-registered" title={slot.linked_user_display_name ?? undefined}>Registered</span>
-                      ) : (
-                        <span className="badge badge-offline">Unregistered</span>
-                      )}
                       {slot.sub_members?.length > 1 && (
                         <span className="badge badge-split">{slot.sub_members.length} sub-members</span>
                       )}
                     </div>
                     <div className="contributor-actions">
-                      {isAdmin && (
+                      {isAdmin && slot.sub_members?.length > 0 && (
                         <button className="btn btn-sm btn-ghost"
-                          onClick={() => isExpanded ? setExpandedSlotId(null) : openSubMembers(slot)}>
+                          onClick={() => isExpanded ? collapseSubMembers(slot.id) : expandSubMembers(slot.id)}>
                           {isExpanded ? "Close" : "Sub-members"}
                         </button>
                       )}
@@ -620,120 +600,116 @@ export default function GroupDashboardPage() {
                     </div>
                   </div>
 
-                  {/* Sub-member editor */}
+                  {/* Sub-member section */}
                   {isExpanded && isAdmin && (
                     <div className="sub-member-editor">
                       <div className="sub-member-header">
-                        <span className="sub-header-label">Sub-member splits (must total ₹{installmentTotal.toLocaleString()})</span>
-                        <button className="btn btn-sm btn-ghost"
-                          onClick={() => setSubDrafts([...subDrafts, { name: "", split_amount: "" }])}>
-                          + Add
-                        </button>
-                      </div>
-                      <p className="text-muted" style={{ fontSize: "0.8rem", marginBottom: "6px" }}>
-                        {slot.sub_members?.length > 0
-                          ? "Edit or rearrange below — saving replaces all sub-members:"
-                          : "Add the people sharing this slot — each needs a name, amount and mobile:"}
-                      </p>
-                      {subDrafts.map((draft, i) => (
-                        <div key={i} style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "6px" }}>
-                          <div className="sub-member-row">
-                            <div style={{ position: "relative", flex: 2, minWidth: 0 }}>
-                              <input
-                                className="input-sm"
-                                style={{ width: "100%" }}
-                                type="text"
-                                placeholder="Name, email or mobile"
-                                value={draft.name}
-                                onChange={(e) => {
-                                  const updated = [...subDrafts];
-                                  updated[i] = { ...updated[i], name: e.target.value, linked_user_id: undefined };
-                                  setSubDrafts(updated);
-                                }}
-                              />
-                              {!draft.linked_user_id && (
-                                <SubMemberSuggestion
-                                  query={draft.name}
-                                  onSelect={(u) => {
-                                    const updated = [...subDrafts];
-                                    updated[i] = { ...updated[i], name: u.display_name ?? draft.name, linked_user_id: u.id };
-                                    setSubDrafts(updated);
-                                  }}
-                                />
-                              )}
-                            </div>
-                            <div style={{ width: "110px", flexShrink: 0 }}>
-                              {draft.linked_user_id ? (
-                                <span className="badge badge-registered">Registered</span>
-                              ) : (
-                                <span className="badge badge-offline" style={{ opacity: 0.6 }}>Unregistered</span>
-                              )}
-                            </div>
-                            <input
-                              className="input-sm"
-                              style={{ flex: 1 }}
-                              type="number"
-                              min="0"
-                              placeholder="Amount"
-                              value={draft.split_amount}
-                              onChange={(e) => {
-                                const updated = [...subDrafts];
-                                updated[i] = { ...updated[i], split_amount: e.target.value };
-                                setSubDrafts(updated);
-                              }}
-                            />
-                            {subDrafts.length > 1 && (
-                              <button className="btn btn-sm btn-ghost" style={{ color: "var(--danger)" }}
-                                onClick={() => setSubDrafts(subDrafts.filter((_, j) => j !== i))}>
-                                ✕
-                              </button>
-                            )}
-                          </div>
-                          {/* Mobile + UPI required for offline sub-members */}
-                          {!draft.linked_user_id && draft.name.trim() && (
-                            <div style={{ display: "flex", gap: "6px", paddingLeft: "4px" }}>
-                              <input
-                                className="input-sm"
-                                style={{ flex: 1 }}
-                                type="tel"
-                                placeholder="Mobile number (required)"
-                                value={draft.mobile_number ?? ""}
-                                onChange={(e) => {
-                                  const updated = [...subDrafts];
-                                  updated[i] = { ...updated[i], mobile_number: e.target.value };
-                                  setSubDrafts(updated);
-                                }}
-                              />
-                              <input
-                                className="input-sm"
-                                style={{ flex: 1 }}
-                                type="text"
-                                placeholder="UPI ID (optional)"
-                                value={draft.upi_id ?? ""}
-                                onChange={(e) => {
-                                  const updated = [...subDrafts];
-                                  updated[i] = { ...updated[i], upi_id: e.target.value };
-                                  setSubDrafts(updated);
-                                }}
-                              />
-                            </div>
+                        <span className="sub-header-label">Sub-members</span>
+                        <div style={{ display: "flex", gap: "4px" }}>
+                          {slot.sub_members?.length > 0 && editingSubsSlotId !== slot.id && (
+                            <button className="btn btn-sm btn-ghost"
+                              onClick={() => {
+                                setEditingSubsSlotId(slot.id);
+                                setEditSubsDrafts((slot.sub_members ?? []).map((sm: any) => ({
+                                  id: sm.id,
+                                  name: sm.name,
+                                  mobile_number: sm.mobile_number ?? "",
+                                  upi_id: sm.upi_id ?? "",
+                                  split_amount: String(sm.split_amount),
+                                  isRegistered: !!sm.linked_user_id,
+                                  linked_user_id: sm.linked_user_id ?? undefined,
+                                })));
+                                setEditSubsError("");
+                              }}>
+                              Edit
+                            </button>
+                          )}
+                          {editingSubsSlotId === slot.id && (
+                            <button className="btn btn-sm btn-ghost"
+                              onClick={() => setEditSubsDrafts([...editSubsDrafts, {
+                                id: -(Date.now()),
+                                name: "", mobile_number: "", upi_id: "",
+                                split_amount: "", isRegistered: false,
+                              }])}>
+                              + Add Sub-member
+                            </button>
                           )}
                         </div>
-                      ))}
-                      <div className="sub-member-footer">
-                        <span className={`split-total ${splitValid ? "split-ok" : "split-bad"}`}>
-                          Total: ₹{splitTotal.toLocaleString()} / ₹{installmentTotal.toLocaleString()}
-                          {splitValid ? " ✓" : " ✗"}
-                        </span>
-                        {subError && <p className="form-error">{subError}</p>}
-                        <div className="btn-group">
-                          <button className="btn btn-sm btn-ghost" onClick={() => setExpandedSlotId(null)}>Cancel</button>
-                          <button className="btn btn-sm btn-primary" disabled={!splitValid || subSaving}
-                            onClick={() => saveSubMembersWithCheck(slot.id)}>
-                            {subSaving ? "Saving…" : "Save"}
-                          </button>
-                        </div>
                       </div>
+
+                      {/* Edit mode: all sub-members as inputs with total validation */}
+                      {editingSubsSlotId === slot.id && (() => {
+                        const editTotal = editSubsDrafts.reduce((s, d) => s + parseFloat(d.split_amount || "0"), 0);
+                        const editValid = Math.abs(editTotal - installmentTotal) < 0.01;
+                        return (
+                          <>
+                            {editSubsDrafts.map((d, di) => (
+                              <div key={d.id} className="sub-member-row">
+                                {d.isRegistered
+                                  ? <span style={{ flex: 3, minWidth: 0 }}>{d.name}</span>
+                                  : <input className="input-sm" style={{ flex: 3, minWidth: 0 }} placeholder="Name"
+                                      value={d.name}
+                                      onChange={(e) => { const u = [...editSubsDrafts]; u[di] = { ...u[di], name: e.target.value }; setEditSubsDrafts(u); }} />
+                                }
+                                <input className="input-sm" style={{ flex: 2, minWidth: 0 }} type="tel" placeholder="Mobile"
+                                  disabled={d.isRegistered}
+                                  value={d.mobile_number}
+                                  onChange={(e) => {
+                                    if (d.isRegistered) return;
+                                    const newMobile = e.target.value;
+                                    const prevInferred = normalizeMobile(d.mobile_number)
+                                      ? `${normalizeMobile(d.mobile_number)}@upi`
+                                      : "";
+                                    const u = [...editSubsDrafts];
+                                    u[di] = {
+                                      ...u[di],
+                                      mobile_number: newMobile,
+                                      upi_id: (!u[di].upi_id.trim() || u[di].upi_id.trim() === prevInferred)
+                                        ? (normalizeMobile(newMobile) ? `${normalizeMobile(newMobile)}@upi` : "")
+                                        : u[di].upi_id,
+                                    };
+                                    setEditSubsDrafts(u);
+                                  }} />
+                                <input className="input-sm" style={{ flex: 2, minWidth: 0 }} placeholder="UPI ID"
+                                  disabled={d.isRegistered}
+                                  value={d.upi_id}
+                                  onChange={(e) => { if (d.isRegistered) return; const u = [...editSubsDrafts]; u[di] = { ...u[di], upi_id: e.target.value }; setEditSubsDrafts(u); }} />
+                                <input className="input-sm" style={{ flex: 1, minWidth: 80 }} type="number" placeholder="Amount"
+                                  value={d.split_amount}
+                                  onChange={(e) => { const u = [...editSubsDrafts]; u[di] = { ...u[di], split_amount: e.target.value }; setEditSubsDrafts(u); }} />
+                                <button className="btn btn-sm btn-ghost" style={{ color: "var(--danger)", flexShrink: 0 }}
+                                  onClick={() => setEditSubsDrafts(editSubsDrafts.filter((_, j) => j !== di))}>
+                                  Remove
+                                </button>
+                              </div>
+                            ))}
+                            <div className="sub-member-footer">
+                              <span className={`split-total ${editValid ? "split-ok" : "split-bad"}`}>
+                                Total: ₹{editTotal.toLocaleString()} / ₹{installmentTotal.toLocaleString()}{editValid ? " ✓" : " ✗"}
+                              </span>
+                              {editSubsError && <p className="form-error">{editSubsError}</p>}
+                              <div className="btn-group">
+                                <button className="btn btn-sm btn-ghost"
+                                  onClick={() => { setEditingSubsSlotId(null); setEditSubsDrafts([]); setEditSubsError(""); }}>
+                                  Cancel
+                                </button>
+                                <button className="btn btn-sm btn-primary" disabled={!editValid || editSubsSaving}
+                                  onClick={() => saveSubMemberEdits(slot.id)}>
+                                  {editSubsSaving ? "Saving…" : "Save"}
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
+
+                      {/* View mode: name-only read-only rows */}
+                      {editingSubsSlotId !== slot.id && (slot.sub_members ?? []).map((sm: any) => (
+                        <div key={sm.id} className="sub-member-row">
+                          <span style={{ flex: 1 }}>{sm.name}</span>
+                        </div>
+                      ))}
+
                     </div>
                   )}
                 </div>

@@ -24,43 +24,83 @@ The system SHALL allow a group admin to add a contributor slot to a group after 
 - **THEN** the system displays a warning before saving and requires the admin to explicitly confirm the multi-slot assignment
 
 ### Requirement: Shared contributor slot (sub-members)
-The system SHALL allow a single contributor slot to be assigned to multiple sub-members who collectively split the installment amount. The total contribution from all sub-members MUST equal the slot's full installment amount. Each sub-member can be a registered user or an offline name. A registered user MAY appear as a sub-member in more than one slot within the same group.
+The system SHALL allow a single contributor slot to be assigned to multiple sub-members when creating a new contributor slot via the Add Contributor form. The total contribution from all sub-members MUST equal the slot's full installment amount. Each sub-member can be a registered user or an offline name. Splitting an existing solo contributor into sub-members after creation is NOT supported — admins who need to split an existing slot must remove the contributor and add them again using the shared flow.
 
-#### Scenario: Split slot among two sub-members
-- **WHEN** an admin assigns two sub-members to a contributor slot with split amounts that sum to the full installment
-- **THEN** the system records both sub-members under the slot and tracks payments per sub-member
+#### Scenario: Split slot among two sub-members at creation time
+- **WHEN** an admin selects "Sharing with others" in the Add Contributor form and fills in at least 2 sub-member rows with names and amounts that sum to the full installment
+- **THEN** clicking "Add Contributor" creates the slot and all sub-members atomically and closes the form
 
 #### Scenario: Invalid split total
 - **WHEN** the sum of sub-member split amounts does not equal the full installment amount
 - **THEN** the system returns a validation error and does not save the split configuration
 
-#### Scenario: Single-member slot (default)
-- **WHEN** only one sub-member is assigned to a slot
-- **THEN** the system treats it as a regular single-contributor slot with no splitting
-
-#### Scenario: Strict user suggestions for sub-members
-- **WHEN** an admin types sub-member identity details with at least a 500 ms pause
-- **THEN** the system fires a user search matching partial name, partial email, or exact mobile number
-- **AND** the admin may save a sub-member as offline name-only if no exact match is selected
+#### Scenario: No +Split button on existing solo slot
+- **WHEN** an admin views an existing contributor slot with no sub-members
+- **THEN** no "+Split" or "+Add" button is shown; the only options are Edit and Remove
 
 #### Scenario: Admin adds sub-member already present elsewhere in the group
 - **WHEN** an admin adds a registered user as a sub-member to a slot where that user is already linked to another slot or sub-member entry in the same group
 - **THEN** the system displays a warning and requires explicit confirmation before saving
 
 ### Requirement: Edit unregistered contributor details
-The system SHALL allow a group admin to update the name, mobile number, and UPI ID of an unregistered (offline) contributor slot or sub-member at any time. Registered slots and sub-members are not editable via this flow — registered users manage their own profile. For sub-members, the split amount MUST also be editable.
+The system SHALL allow a group admin to update the name, mobile number, and UPI ID of an unregistered (offline) contributor slot or sub-member at any time. Registered slots and sub-members are not editable via this flow — registered users manage their own profile. For sub-members, the split amount MUST also be editable. Mobile numbers submitted in the Edit Contributor form MUST be normalised and validated using the same rules as all other mobile number inputs (strip country code / whitespace / special characters; must result in a 10-digit number starting with 6–9).
 
 #### Scenario: Edit offline contributor slot
 - **WHEN** an admin edits an unregistered contributor slot's name, mobile number, or UPI ID
 - **THEN** the system updates the slot record and the contributor list reflects the new values immediately
 
 #### Scenario: Edit offline sub-member
-- **WHEN** an admin edits an unregistered sub-member's name, mobile number, UPI ID, or split amount
-- **THEN** the system updates the sub-member record; the admin is responsible for ensuring all split amounts still sum to the slot's installment amount
+- **WHEN** an admin clicks the Edit button on a slot's sub-member section
+- **THEN** all sub-members become editable simultaneously in a single-row form (name, mobile, UPI, amount in one flex row per sub-member)
+- **AND** offline sub-members have all four fields editable; registered sub-members have name as read-only text and mobile/UPI as disabled (read-only) inputs showing stored values
+- **AND** the UI shows a live total indicator validating that all split amounts sum to the slot's installment amount
+- **AND** the Save button is disabled while the total does not match the installment amount
+
+#### Scenario: Remove sub-member in edit mode (any type)
+- **WHEN** an admin removes a sub-member (offline or registered) while in edit mode
+- **THEN** the sub-member row is removed from the edit form immediately and the running total is recalculated
+- **AND** Save remains disabled until the remaining sub-member amounts sum to the installment amount
+- **AND** the Remove button is visible for ALL sub-members (offline and registered) while in edit mode; it is hidden in read-only view mode
+
+#### Scenario: Minimum one sub-member enforced
+- **WHEN** an admin removes sub-members such that the edit form would have zero rows
+- **THEN** the system prevents saving — at least one sub-member is required per slot
+
+#### Scenario: Registered sub-member mobile and UPI shown read-only
+- **WHEN** a registered sub-member's row is displayed in edit mode
+- **THEN** the mobile number and UPI ID fields are shown with their stored values but disabled (not editable); only the split amount is editable for registered sub-members
+
+#### Scenario: Contributor slot capacity check before adding
+- **WHEN** an admin clicks Add Contributor and the group already has as many slots as its total cycle count
+- **THEN** the system shows an inline error message and does NOT open the Add Contributor form
+
+#### Scenario: Add sub-member while editing existing sub-members
+- **WHEN** an admin is in edit mode for a slot's sub-members
+- **THEN** a "+ Add Sub-member" button is visible; clicking it appends a blank offline row to the edit form
+- **AND** the new row must be filled before Save is enabled (total must match installment amount)
+
+#### Scenario: Mobile number normalized on save
+- **WHEN** an admin saves a contributor slot or sub-member with a mobile number that contains spaces, country code (+91 / 91 / 0091), dashes, or parentheses
+- **THEN** the system strips all non-digit characters, removes the leading country code, and stores only the 10-digit number
+- **AND** if the normalised value is not exactly 10 digits or does not start with a digit in the range 6–9, the system shows a validation error and does not save
+
+#### Scenario: Invalid mobile number rejected
+- **WHEN** an admin enters a mobile number that cannot be reduced to a valid 10-digit Indian mobile (e.g. too short, too long, or incorrect prefix after stripping country code)
+- **THEN** the system shows an inline error message identifying the invalid number and does not proceed with saving
 
 #### Scenario: Edit blocked on registered slot
 - **WHEN** a contributor slot is linked to a registered user account
 - **THEN** the Edit action is not shown; the user manages their own details from their profile
+
+#### Scenario: UPI ID auto-derived from mobile number
+- **WHEN** an admin types or changes a mobile number in any contributor or sub-member form (Add Contributor, Edit Contributor, Edit Sub-member)
+- **THEN** if the UPI ID field is empty OR still contains the previously auto-derived value (`{previous-mobile}@upi`), the system automatically updates the UPI ID field to `{normalized-mobile}@upi`
+- **AND** if the admin has already manually edited the UPI ID to a custom value, the auto-derive does NOT overwrite it
+
+#### Scenario: UPI ID persists when mobile changes to custom value
+- **WHEN** a UPI ID was manually set to a custom value (not the auto-derived `{mobile}@upi`)
+- **AND** the admin later changes the mobile number
+- **THEN** the UPI ID field retains the custom value unchanged
 
 ### Requirement: Add shared contributor in one step
 The system SHALL allow an admin to create a shared contributor slot and its sub-members in a single form submission. The slot and all sub-members are saved atomically from the admin's perspective.

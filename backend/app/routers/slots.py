@@ -421,6 +421,36 @@ def update_sub_member(
 
 
 # ---------------------------------------------------------------------------
+# Remove an individual sub-member
+# ---------------------------------------------------------------------------
+
+@router.delete("/{group_id}/slots/{slot_id}/sub-members/{sub_member_id}")
+def remove_sub_member(
+    group_id: int,
+    slot_id: int,
+    sub_member_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_complete_profile),
+):
+    _get_group_or_404(db, group_id)
+    _require_admin(db, group_id, current_user.id)
+    _get_slot_or_404(db, group_id, slot_id)
+
+    sub_member = db.query(SubMember).filter(
+        SubMember.id == sub_member_id,
+        SubMember.slot_id == slot_id,
+    ).first()
+    if not sub_member:
+        raise HTTPException(status_code=404, detail="Sub-member not found.")
+    if sub_member.linked_user_id:
+        raise HTTPException(status_code=400, detail="Cannot remove a registered sub-member.")
+
+    db.delete(sub_member)
+    db.commit()
+    return {"message": "Sub-member removed."}
+
+
+# ---------------------------------------------------------------------------
 # Remove a contributor slot
 # ---------------------------------------------------------------------------
 

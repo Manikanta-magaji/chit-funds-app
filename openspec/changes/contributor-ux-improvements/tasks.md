@@ -80,3 +80,17 @@
 - [x] 12.3 Frontend: add `start_date?: string` to `updateGroupSettings` endpoint
 - [x] 12.4 Frontend: add `settingStartMonth` / `settingStartYear` state; populate from `group.start_date` in `openSettings`
 - [x] 12.5 Frontend: add Month/Year dropdowns to Settings tab form, disabled when `winnerDeclared`; include `start_date` in patch on save
+
+## Edit Contributor — Mobile Validation & Stale UPI Bug
+
+- [x] 13.1 In `EditContributorModal.tsx`, import `normalizeMobile` and apply it on the mobile field before calling `mutate`; show inline error if normalisation returns `null`
+- [x] 13.2 In `EditContributorModal.tsx`, also invalidate `["draw-history", groupId]` in the `onSuccess` handler so draw-history cache refreshes after an edit
+- [x] 13.3 In `GroupDashboardPage.tsx`, replace the Pay Now button's dependency on `viewCycleHistory.winner_slot` UPI/sub-member data with live data from the `slots` array (look up `viewCycleWinnerSlotId` in `slots`) so QR code always reflects current values even if draw-history cache is momentarily stale
+
+## UPI Auto-Derive & Remove +Split
+
+- [x] 14.1 Add `inferUpi(mob)` helper in `EditContributorModal.tsx` and `AddContributorModal.tsx`; when mobile field changes, auto-set UPI to `{normalizedMobile}@upi` if UPI is empty or currently equals the previously auto-derived value — does NOT override a manually entered custom UPI
+- [x] 14.2 Apply same auto-derive logic to each sub-member's `mobile_number` onChange in the inline edit rows of `GroupDashboardPage.tsx`
+- [x] 14.3 Remove the `+Split` button from contributor actions in `GroupDashboardPage.tsx` (button was shown when `slot.sub_members?.length === 0`)
+- [x] 14.4 Remove the first-time sub-member add form (all `subDrafts`/`subError`/`subSaving` state, `openSubMembers`, `saveSubMembers`, `saveSubMembersWithCheck`, `SubMemberDraft`, `SubMemberSuggestion`) from `GroupDashboardPage.tsx`
+- [x] 14.5 Remove "Sharing with others" toggle and sub-member inline form from `AddContributorModal.tsx`; simplify Props (remove `installmentAmount`, change `onSuccess` to `() => void`); modal now only handles solo contributors

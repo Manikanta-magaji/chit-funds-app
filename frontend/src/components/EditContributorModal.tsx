@@ -1,6 +1,13 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { updateSlot, updateSubMember } from "../api/endpoints";
+import { normalizeMobile } from "../utils/normalizeMobile";
+
+/** Derives the default UPI ID from a mobile number (normalized if valid). */
+function inferUpi(mob: string): string {
+  const norm = normalizeMobile(mob);
+  return norm ? `${norm}@upi` : "";
+}
 
 interface SlotTarget {
   kind: "slot";
@@ -50,10 +57,17 @@ export default function EditContributorModal({ groupId, target, onClose, onSucce
   const mutation = useMutation({
     mutationFn: () => {
       if (!name.trim()) throw new Error("Name cannot be empty.");
+      // Normalize and validate mobile if provided
+      let normalizedMobile: string | undefined;
+      if (mobile.trim()) {
+        const norm = normalizeMobile(mobile);
+        if (!norm) throw new Error(`"${mobile}" is not a valid 10-digit mobile number.`);
+        normalizedMobile = norm;
+      }
       if (target.kind === "slot") {
         return updateSlot(groupId, target.slotId, {
           name: name.trim(),
-          mobile_number: mobile.trim() || undefined,
+          mobile_number: normalizedMobile,
           upi_id: upi.trim() || undefined,
         });
       } else {
@@ -61,7 +75,7 @@ export default function EditContributorModal({ groupId, target, onClose, onSucce
         if (isNaN(amt) || amt <= 0) throw new Error("Amount must be a positive number.");
         return updateSubMember(groupId, target.slotId, target.subMemberId, {
           name: name.trim(),
-          mobile_number: mobile.trim() || undefined,
+          mobile_number: normalizedMobile,
           upi_id: upi.trim() || undefined,
           split_amount: amt,
         });
@@ -69,6 +83,7 @@ export default function EditContributorModal({ groupId, target, onClose, onSucce
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["slots", groupId] });
+      qc.invalidateQueries({ queryKey: ["draw-history", groupId] });
       onSuccess();
     },
     onError: (err: any) => setError(err.response?.data?.detail || err.message || "Failed to save."),
@@ -113,7 +128,14 @@ export default function EditContributorModal({ groupId, target, onClose, onSucce
               className="input-sm"
               style={{ width: "100%" }}
               value={mobile}
-              onChange={(e) => setMobile(e.target.value)}
+              onChange={(e) => {
+                const newMobile = e.target.value;
+                const prevInferred = inferUpi(mobile);
+                setMobile(newMobile);
+                if (!upi.trim() || upi.trim() === prevInferred) {
+                  setUpi(inferUpi(newMobile));
+                }
+              }}
               onKeyDown={handleKeyDown}
               placeholder="e.g. 9876543210"
             />

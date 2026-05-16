@@ -3,6 +3,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { addSlot, setSubMembers } from "../api/endpoints";
 import type { User } from "../api/types";
 import UserSuggestion from "./UserSuggestion";
+import { normalizeMobile } from "../utils/normalizeMobile";
+
+/** Derives the default UPI ID from a mobile number (normalized if valid). */
+function inferUpi(mob: string): string {
+  const norm = normalizeMobile(mob);
+  return norm ? `${norm}@upi` : "";
+}
 
 interface SubDraft {
   name: string;
@@ -18,7 +25,7 @@ interface Props {
   installmentAmount: number;
   slots: any[];
   onClose: () => void;
-  onSuccess: (wasShared: boolean, savedSlotId: number) => void;
+  onSuccess: () => void;
 }
 
 export default function AddContributorModal({ groupId, installmentAmount, slots, onClose, onSuccess }: Props) {
@@ -60,19 +67,43 @@ export default function AddContributorModal({ groupId, installmentAmount, slots,
   const mutation = useMutation({
     mutationFn: async () => {
       const isOffline = !linkedUser;
-      if (isOffline && isShared === false && !mobile.trim()) {
-        throw new Error("Mobile number is required.");
+
+      // Validate + normalize single-contributor mobile
+      let normalizedMobile: string | undefined;
+      if (isOffline && isShared === false) {
+        if (!mobile.trim()) throw new Error("Mobile number is required.");
+        const norm = normalizeMobile(mobile);
+        if (!norm) throw new Error(`"${mobile}" is not a valid 10-digit mobile number.`);
+        normalizedMobile = norm;
       }
+
+      // Validate + normalize sub-member mobiles
+      let normalizedDrafts = subDrafts;
+      if (isShared) {
+        const result: SubDraft[] = [];
+        for (const d of subDrafts.filter((d) => d.name.trim())) {
+          if (!d.linked_user_id) {
+            if (!d.mobile_number.trim()) throw new Error(`Mobile number is required for "${d.name}".`);
+            const norm = normalizeMobile(d.mobile_number);
+            if (!norm) throw new Error(`"${d.mobile_number}" is not a valid 10-digit mobile number for "${d.name}".`);
+            result.push({ ...d, mobile_number: norm });
+          } else {
+            result.push(d);
+          }
+        }
+        normalizedDrafts = result;
+      }
+
       const slotName = linkedUser ? (linkedUser.display_name ?? name.trim()) : name.trim();
       const slot = await addSlot(
         groupId,
         slotName,
         linkedUser?.id,
-        isOffline && !isShared ? mobile.trim() : undefined,
+        normalizedMobile,
         isOffline && !isShared ? upi.trim() || undefined : undefined,
       );
       if (isShared && slot?.id) {
-        const validDrafts = subDrafts.filter((d) => d.name.trim());
+        const validDrafts = normalizedDrafts.filter((d) => d.name.trim());
         if (validDrafts.length >= 2) {
           await setSubMembers(
             groupId,
@@ -89,10 +120,10 @@ export default function AddContributorModal({ groupId, installmentAmount, slots,
       }
       return slot;
     },
-    onSuccess: (data: any) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["slots", groupId] });
       qc.invalidateQueries({ queryKey: ["group", groupId] });
-      onSuccess(!!isShared, data?.id);
+      onSuccess();
     },
     onError: (err: any) => setError(err.response?.data?.detail || err.message || "Failed to add contributor."),
   });
@@ -120,7 +151,7 @@ export default function AddContributorModal({ groupId, installmentAmount, slots,
   };
 
   const canAdd =
-    (name.trim() || linkedUser) &&
+    !!(name.trim() || linkedUser) &&
     isShared !== null &&
     (isShared === false || (subDrafts.filter((d) => d.name.trim()).length >= 2 && splitValid));
 
@@ -191,7 +222,14 @@ export default function AddContributorModal({ groupId, installmentAmount, slots,
               <input
                 type="tel"
                 value={mobile}
-                onChange={(e) => setMobile(e.target.value)}
+                onChange={(e) => {
+                  const newMobile = e.target.value;
+                  const prevInferred = inferUpi(mobile);
+                  setMobile(newMobile);
+                  if (!upi.trim() || upi.trim() === prevInferred) {
+                    setUpi(inferUpi(newMobile));
+                  }
+                }}
                 onKeyDown={handleKeyDown}
                 placeholder="Mobile number (required)"
                 className="input-sm"
@@ -238,7 +276,7 @@ export default function AddContributorModal({ groupId, installmentAmount, slots,
                 >
                   <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                     <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", minWidth: "20px" }}>#{i + 1}</span>
-                      <div style={{ position: "relative", flex: 1 }}>
+                    <div style={{ position: "relative", flex: 1 }}>
                       <input
                         className="input-sm"
                         style={{ width: "100%" }}
@@ -300,8 +338,16 @@ export default function AddContributorModal({ groupId, installmentAmount, slots,
                         placeholder="Mobile (required)"
                         value={draft.mobile_number}
                         onChange={(e) => {
+                          const newMobile = e.target.value;
+                          const prevInferred = inferUpi(draft.mobile_number);
                           const updated = [...subDrafts];
-                          updated[i] = { ...updated[i], mobile_number: e.target.value };
+                          updated[i] = {
+                            ...updated[i],
+                            mobile_number: newMobile,
+                            upi_id: (!updated[i].upi_id.trim() || updated[i].upi_id.trim() === prevInferred)
+                              ? inferUpi(newMobile)
+                              : updated[i].upi_id,
+                          };
                           setSubDrafts(updated);
                         }}
                       />
