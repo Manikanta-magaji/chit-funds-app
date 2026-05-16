@@ -659,6 +659,18 @@ a:hover { text-decoration: underline; }
   padding: 0.1rem 0;
 }
 .upi-breakdown-amount { font-weight: 600; color: var(--text); }
+.upi-warn {
+  font-size: .84rem;
+  color: #92400e;
+  background: #fffbeb;
+  border-left: 3px solid #f59e0b;
+  border-radius: 4px;
+  padding: .5rem .75rem;
+  line-height: 1.5;
+  text-align: left;
+  width: 100%;
+  box-sizing: border-box;
+}
 .upi-note {
   font-size: .82rem;
   color: var(--text-muted);

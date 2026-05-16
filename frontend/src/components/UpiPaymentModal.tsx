@@ -64,6 +64,11 @@ export default function UpiPaymentModal({
             {breakdown && breakdown.length >= 2 ? "Total: " : ""}₹{amount.toLocaleString()}
           </p>
 
+          <p className="upi-warn">
+            Before paying, check that the name shown in your UPI app matches{" "}
+            <strong>{winnerName}</strong>. UPI payments cannot be reversed.
+          </p>
+
           <a href={upiUri} className="btn btn-upi" rel="noopener noreferrer">
             Open in UPI App
           </a>
