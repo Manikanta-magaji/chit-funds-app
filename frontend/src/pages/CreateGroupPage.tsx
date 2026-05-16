@@ -14,10 +14,10 @@ export default function CreateGroupPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Optional start month/year (default: empty = not set)
+  // Optional start month/year (default: current month/year)
   const today = new Date();
-  const [startMonth, setStartMonth] = useState("");   // "1"–"12" or ""
-  const [startYear, setStartYear] = useState("");     // "2024" etc. or ""
+  const [startMonth, setStartMonth] = useState(String(today.getMonth() + 1));   // "1"–"12"
+  const [startYear, setStartYear] = useState(String(today.getFullYear()));       // "2024" etc.
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getInstallments, markInstallment } from "../api/endpoints";
 import { useAuth } from "../context/AuthContext";
@@ -13,13 +13,15 @@ interface Props {
   slots: Slot[];
   winnerSlotId?: number | null;
   groupCreatedAt: string;
+  groupStartDate?: string | null;
   viewCycle: number;
   onViewCycleChange: (cycle: number) => void;
 }
 
 // Parse year/month directly from ISO string to avoid Date mutation / timezone issues
-function cycleLabel(cycleNum: number, createdAt: string): string {
-  const match = createdAt.match(/^(\d{4})-(\d{2})/);
+function cycleLabel(cycleNum: number, createdAt: string, startDate?: string | null): string {
+  const base = startDate && startDate.length >= 7 ? startDate : createdAt;
+  const match = base.match(/^(\d{4})-(\d{2})/);
   if (!match) return `Cycle ${cycleNum}`;
   let year = parseInt(match[1], 10);
   let month = parseInt(match[2], 10) - 1; // 0-indexed
@@ -46,10 +48,23 @@ function fmtDate(iso: string | null) {
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" });
 }
 
-export default function InstallmentPanel({ groupId, currentCycle, totalCycles, isAdmin, installmentAmount, slots, winnerSlotId, groupCreatedAt, viewCycle, onViewCycleChange }: Props) {
+export default function InstallmentPanel({ groupId, currentCycle, totalCycles, isAdmin, installmentAmount, slots, winnerSlotId, groupCreatedAt, groupStartDate, viewCycle, onViewCycleChange }: Props) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const [expandedSlots, setExpandedSlots] = useState<Set<number>>(new Set());
+  const autoExpandedRef = useRef(false);
+
+  // Auto-expand slots with sub-members on first meaningful render
+  useEffect(() => {
+    if (autoExpandedRef.current || slots.length === 0) return;
+    const subMemberSlotIds = slots
+      .filter((s: any) => (s.sub_members ?? []).length > 1)
+      .map((s: any) => s.id);
+    if (subMemberSlotIds.length > 0) {
+      setExpandedSlots(new Set(subMemberSlotIds));
+      autoExpandedRef.current = true;
+    }
+  }, [slots]);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["installments", groupId, viewCycle] });
@@ -126,7 +141,7 @@ export default function InstallmentPanel({ groupId, currentCycle, totalCycles, i
           >
             {cycles.map((c) => (
               <option key={c} value={c}>
-                {cycleLabel(c, groupCreatedAt)}{c === currentCycle ? " (current)" : ""}
+                {cycleLabel(c, groupCreatedAt, groupStartDate)}{c === currentCycle ? " (current)" : ""}
               </option>
             ))}
           </select>

@@ -527,6 +527,7 @@ export default function GroupDashboardPage() {
             slots={slots}
             winnerSlotId={viewCycleWinnerSlotId}
             groupCreatedAt={group.created_at}
+            groupStartDate={group.start_date}
             viewCycle={viewCycle}
             onViewCycleChange={setViewCycle}
           />
