@@ -72,7 +72,7 @@ export default function LoginPage() {
         </a>
 
         <p className="auth-footer">Don't have an account?</p>
-        <Link to="/register" className="btn btn-secondary btn-full">Create one</Link>
+        <Link to="/register" className="btn btn-primary btn-full">Create one</Link>
       </div>
     </div>
   );

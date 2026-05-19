@@ -1,7 +1,7 @@
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Record installment payment
-The system SHALL allow a group admin or the slot's linked member (or sub-member) to mark an installment as paid for a specific contributor slot (or sub-member) within a specific cycle. Admins SHALL also be able to unmark a payment. Members MAY only mark or unmark their own slot (or their own sub-member row). When a user holds multiple positions in a group, each position MUST be paid independently; paying one position does not affect the payment status of another.
+The system SHALL allow a group admin or the slot's linked member (or sub-member) to mark an installment as paid for a specific contributor slot (or sub-member) within a specific cycle. Admins SHALL also be able to unmark a payment. Members MAY only mark or unmark their own slot (or their own sub-member row).
 
 **Draw-required gate**: Mark Paid actions SHALL be disabled until the prize draw for the current cycle has been performed.
 
@@ -12,10 +12,6 @@ The system SHALL allow a group admin or the slot's linked member (or sub-member)
 #### Scenario: Member marks own installment as paid
 - **WHEN** a linked contributor clicks Mark Paid on their own slot after the prize draw is done
 - **THEN** the system records the payment immediately and refreshes the status
-
-#### Scenario: Member with multiple slots marks one slot as paid
-- **WHEN** a logged-in user who holds two slots clicks Mark Paid on one of their slots
-- **THEN** the system records that specific slot as paid and the other slot remains in its current payment state
 
 #### Scenario: Member cannot mark others' installments
 - **WHEN** a member attempts to mark a slot they are not linked to as paid
