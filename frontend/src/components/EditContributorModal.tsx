@@ -3,18 +3,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { updateSlot, updateSubMember } from "../api/endpoints";
 import { normalizeMobile } from "../utils/normalizeMobile";
 
-/** Derives the default UPI ID from a mobile number (normalized if valid). */
-function inferUpi(mob: string): string {
-  const norm = normalizeMobile(mob);
-  return norm ? `${norm}@upi` : "";
-}
-
 interface SlotTarget {
   kind: "slot";
   slotId: number;
   name: string;
   mobile_number: string | null;
   upi_id: string | null;
+  linked_user_id: number | null;
 }
 
 interface SubMemberTarget {
@@ -25,6 +20,7 @@ interface SubMemberTarget {
   mobile_number: string | null;
   upi_id: string | null;
   split_amount: number;
+  linked_user_id: number | null;
 }
 
 type Target = SlotTarget | SubMemberTarget;
@@ -38,6 +34,7 @@ interface Props {
 
 export default function EditContributorModal({ groupId, target, onClose, onSuccess }: Props) {
   const qc = useQueryClient();
+  const isLinked = !!target.linked_user_id;
   const [name, setName] = useState(target.name);
   const [mobile, setMobile] = useState(target.mobile_number ?? "");
   const [upi, setUpi] = useState(target.upi_id ?? "");
@@ -56,6 +53,14 @@ export default function EditContributorModal({ groupId, target, onClose, onSucce
 
   const mutation = useMutation({
     mutationFn: () => {
+      if (isLinked) {
+        // Linked contributor: only update UPI ID (writes to User.upi_id globally)
+        if (target.kind === "slot") {
+          return updateSlot(groupId, target.slotId, { upi_id: upi.trim() || undefined });
+        } else {
+          return updateSubMember(groupId, target.slotId, target.subMemberId, { upi_id: upi.trim() || undefined });
+        }
+      }
       if (!name.trim()) throw new Error("Name cannot be empty.");
       // Normalize and validate mobile if provided
       let normalizedMobile: string | undefined;
@@ -109,62 +114,78 @@ export default function EditContributorModal({ groupId, target, onClose, onSucce
           <button className="modal-close" onClick={onClose} disabled={mutation.isPending}>×</button>
         </div>
         <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          <div>
-            <label className="form-label">Name</label>
-            <input
-              type="text"
-              className="input-sm"
-              style={{ width: "100%" }}
-              value={name}
-              onChange={(e) => { setName(e.target.value); setError(""); }}
-              onKeyDown={handleKeyDown}
-              autoFocus
-            />
-          </div>
-          <div>
-            <label className="form-label">Mobile number</label>
-            <input
-              type="tel"
-              className="input-sm"
-              style={{ width: "100%" }}
-              value={mobile}
-              onChange={(e) => {
-                const newMobile = e.target.value;
-                const prevInferred = inferUpi(mobile);
-                setMobile(newMobile);
-                if (!upi.trim() || upi.trim() === prevInferred) {
-                  setUpi(inferUpi(newMobile));
-                }
-              }}
-              onKeyDown={handleKeyDown}
-              placeholder="e.g. 9876543210"
-            />
-          </div>
-          <div>
-            <label className="form-label">UPI ID <span className="text-muted">(optional)</span></label>
-            <input
-              type="text"
-              className="input-sm"
-              style={{ width: "100%" }}
-              value={upi}
-              onChange={(e) => setUpi(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={`Leave blank to use ${mobile.trim() || "mobile"}@upi`}
-            />
-          </div>
-          {target.kind === "sub-member" && (
-            <div>
-              <label className="form-label">Split amount (₹)</label>
-              <input
-                type="number"
-                min="1"
-                className="input-sm"
-                style={{ width: "100%" }}
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                onKeyDown={handleKeyDown}
-              />
-            </div>
+          {isLinked ? (
+            <>
+              <p className="field-hint" style={{ margin: 0 }}>
+                Updating the UPI ID for <strong>{target.name}</strong> will apply globally across all groups.
+              </p>
+              <div>
+                <label className="form-label">UPI ID <span className="text-muted">(optional)</span></label>
+                <input
+                  type="text"
+                  className="input-sm"
+                  style={{ width: "100%" }}
+                  value={upi}
+                  onChange={(e) => { setUpi(e.target.value); setError(""); }}
+                  onKeyDown={handleKeyDown}
+                  placeholder="e.g. name@bank or 9876543210@upi"
+                  autoFocus
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="form-label">Name</label>
+                <input
+                  type="text"
+                  className="input-sm"
+                  style={{ width: "100%" }}
+                  value={name}
+                  onChange={(e) => { setName(e.target.value); setError(""); }}
+                  onKeyDown={handleKeyDown}
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="form-label">Mobile number</label>
+                <input
+                  type="tel"
+                  className="input-sm"
+                  style={{ width: "100%" }}
+                  value={mobile}
+                  onChange={(e) => setMobile(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="e.g. 9876543210"
+                />
+              </div>
+              <div>
+                <label className="form-label">UPI ID <span className="text-muted">(optional)</span></label>
+                <input
+                  type="text"
+                  className="input-sm"
+                  style={{ width: "100%" }}
+                  value={upi}
+                  onChange={(e) => setUpi(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="e.g. name@bank or 9876543210@upi"
+                />
+              </div>
+              {target.kind === "sub-member" && (
+                <div>
+                  <label className="form-label">Split amount (₹)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="input-sm"
+                    style={{ width: "100%" }}
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                  />
+                </div>
+              )}
+            </>
           )}
           {error && <p className="form-error">{error}</p>}
         </div>
@@ -175,7 +196,7 @@ export default function EditContributorModal({ groupId, target, onClose, onSucce
           <button
             className="btn btn-primary"
             onClick={handleSave}
-            disabled={!name.trim() || mutation.isPending}
+            disabled={(!isLinked && !name.trim()) || mutation.isPending}
           >
             {mutation.isPending ? "Saving…" : "Save"}
           </button>

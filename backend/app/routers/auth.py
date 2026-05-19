@@ -19,7 +19,11 @@ COOKIE_KWARGS = dict(httponly=True, samesite="lax", secure=False)  # set secure=
 
 
 def _link_offline_entries_by_mobile(db, user: User) -> None:
-    """Link any offline contributor slots and sub-members whose mobile matches the user."""
+    """Link any offline contributor slots and sub-members whose mobile matches the user.
+
+    If the user has no UPI ID, inherits the UPI from the first linked slot or sub-member
+    that has one set by an admin — so the admin-configured UPI is preserved after sign-up.
+    """
     mobile = user.mobile_number
     if not mobile:
         return
@@ -31,6 +35,8 @@ def _link_offline_entries_by_mobile(db, user: User) -> None:
     for slot in slots:
         slot.linked_user_id = user.id
         slot.is_offline = False
+        if not user.upi_id and slot.upi_id:
+            user.upi_id = slot.upi_id
 
     sub_members = db.query(SubMember).filter(
         SubMember.linked_user_id == None,
@@ -38,6 +44,8 @@ def _link_offline_entries_by_mobile(db, user: User) -> None:
     ).all()
     for sm in sub_members:
         sm.linked_user_id = user.id
+        if not user.upi_id and sm.upi_id:
+            user.upi_id = sm.upi_id
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +85,7 @@ def register(body: RegisterRequest, response: Response, db: Session = Depends(ge
     db.refresh(user)
     _link_offline_entries_by_mobile(db, user)
     db.commit()
+    db.refresh(user)
 
     token = create_access_token(user.id)
     response.set_cookie(COOKIE_NAME, token, **COOKIE_KWARGS)

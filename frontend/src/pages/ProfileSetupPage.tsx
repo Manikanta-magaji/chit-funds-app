@@ -13,9 +13,6 @@ export default function ProfileSetupPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Auto-infer UPI when mobile changes (if not manually edited)
-  const inferredUpi = mobileNumber ? `${mobileNumber}@upi` : "";
-
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
@@ -68,18 +65,15 @@ export default function ProfileSetupPage() {
           </div>
           <div className="form-group">
             <label htmlFor="upi">
-              UPI ID <span className="hint">(optional — inferred from mobile if blank)</span>
+              UPI ID <span className="hint">(optional)</span>
             </label>
             <input
               id="upi"
               type="text"
               value={upiId}
               onChange={(e) => setUpiId(e.target.value)}
-              placeholder={inferredUpi || "yourname@upi"}
+              placeholder="e.g. yourname@bank or 9876543210@upi"
             />
-            {!upiId && inferredUpi && (
-              <p className="field-hint">Will be set to: <strong>{inferredUpi}</strong></p>
-            )}
           </div>
           {error && <p className="form-error">{error}</p>}
           <button type="submit" className="btn btn-primary btn-full" disabled={loading}>

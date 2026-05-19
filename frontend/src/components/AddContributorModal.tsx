@@ -5,12 +5,6 @@ import type { User } from "../api/types";
 import UserSuggestion from "./UserSuggestion";
 import { normalizeMobile } from "../utils/normalizeMobile";
 
-/** Derives the default UPI ID from a mobile number (normalized if valid). */
-function inferUpi(mob: string): string {
-  const norm = normalizeMobile(mob);
-  return norm ? `${norm}@upi` : "";
-}
-
 interface SubDraft {
   name: string;
   split_amount: string;
@@ -222,14 +216,7 @@ export default function AddContributorModal({ groupId, installmentAmount, slots,
               <input
                 type="tel"
                 value={mobile}
-                onChange={(e) => {
-                  const newMobile = e.target.value;
-                  const prevInferred = inferUpi(mobile);
-                  setMobile(newMobile);
-                  if (!upi.trim() || upi.trim() === prevInferred) {
-                    setUpi(inferUpi(newMobile));
-                  }
-                }}
+                onChange={(e) => setMobile(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Mobile number (required)"
                 className="input-sm"
@@ -239,7 +226,7 @@ export default function AddContributorModal({ groupId, installmentAmount, slots,
                 value={upi}
                 onChange={(e) => setUpi(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={`UPI ID — leave blank to use ${mobile.trim() || "mobile"}@upi`}
+                placeholder="UPI ID (optional — e.g. name@bank or 9876543210@upi)"
                 className="input-sm"
               />
             </>
@@ -339,16 +326,8 @@ export default function AddContributorModal({ groupId, installmentAmount, slots,
                         placeholder="Mobile (required)"
                         value={draft.mobile_number}
                         onChange={(e) => {
-                          const newMobile = e.target.value;
-                          const prevInferred = inferUpi(draft.mobile_number);
                           const updated = [...subDrafts];
-                          updated[i] = {
-                            ...updated[i],
-                            mobile_number: newMobile,
-                            upi_id: (!updated[i].upi_id.trim() || updated[i].upi_id.trim() === prevInferred)
-                              ? inferUpi(newMobile)
-                              : updated[i].upi_id,
-                          };
+                          updated[i] = { ...updated[i], mobile_number: e.target.value };
                           setSubDrafts(updated);
                         }}
                       />

@@ -30,8 +30,7 @@ def update_profile(
         )
     current_user.display_name = body.display_name
     current_user.mobile_number = normalize_mobile(body.mobile_number)
-    # Infer UPI ID from mobile if not provided
-    current_user.upi_id = body.upi_id if body.upi_id else f"{normalize_mobile(body.mobile_number)}@upi"
+    current_user.upi_id = (body.upi_id or "").strip() or None
     current_user.is_profile_complete = True
     db.commit()
     db.refresh(current_user)

@@ -195,6 +195,8 @@ def list_slots(
         linked_user_display_name: str | None = None
         if slot.linked_user_id and slot.linked_user:
             linked_user_display_name = slot.linked_user.display_name or slot.linked_user.email
+        # For linked slots return the user's global UPI; for offline slots return slot.upi_id
+        effective_upi = (slot.linked_user.upi_id if slot.linked_user_id and slot.linked_user else slot.upi_id)
         result.append({
             "id": slot.id,
             "name": slot.name,
@@ -202,7 +204,7 @@ def list_slots(
             "linked_user_id": slot.linked_user_id,
             "linked_user_display_name": linked_user_display_name,
             "mobile_number": slot.mobile_number,
-            "upi_id": slot.upi_id,
+            "upi_id": effective_upi,
             "sub_members": [
                 {
                     "id": sm.id,
@@ -213,8 +215,8 @@ def list_slots(
                         if sm.linked_user_id and sm.linked_user else None
                     ),
                     "split_amount": sm.split_amount,
-                    "mobile_number": sm.mobile_number,
-                    "upi_id": sm.upi_id,
+                    "mobile_number": sm.mobile_number or (sm.linked_user.mobile_number if sm.linked_user_id and sm.linked_user else None),
+                    "upi_id": sm.linked_user.upi_id if sm.linked_user_id and sm.linked_user else sm.upi_id,
                 }
                 for sm in slot.sub_members
             ],
@@ -365,7 +367,11 @@ def update_slot(
     if body.mobile_number is not None:
         slot.mobile_number = body.mobile_number.strip() or None
     if body.upi_id is not None:
-        slot.upi_id = body.upi_id.strip() or None
+        upi_val = body.upi_id.strip() or None
+        if slot.linked_user_id and slot.linked_user:
+            slot.linked_user.upi_id = upi_val
+        else:
+            slot.upi_id = upi_val
 
     db.commit()
     return {"message": "Slot updated.", "id": slot.id}
@@ -410,7 +416,11 @@ def update_sub_member(
     if body.mobile_number is not None:
         sub_member.mobile_number = body.mobile_number.strip() or None
     if body.upi_id is not None:
-        sub_member.upi_id = body.upi_id.strip() or None
+        upi_val = body.upi_id.strip() or None
+        if sub_member.linked_user_id and sub_member.linked_user:
+            sub_member.linked_user.upi_id = upi_val
+        else:
+            sub_member.upi_id = upi_val
     if body.split_amount is not None:
         if body.split_amount <= 0:
             raise HTTPException(status_code=422, detail="Split amount must be positive.")

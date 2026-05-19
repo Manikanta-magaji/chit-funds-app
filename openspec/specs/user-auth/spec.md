@@ -53,7 +53,9 @@ The system SHALL maintain authenticated sessions via JWT. Access tokens SHALL ex
 - **THEN** the system clears the session cookie and the user is redirected to the login page
 
 ### Requirement: User profile setup
-The system SHALL require each user to have a display name, mobile number, and UPI ID. On first login, if any of these are missing, the system MUST prompt the user to complete their profile before accessing other features. The display name SHALL be pre-filled from the Google profile name (if available) or derived from the email prefix. If the UPI ID is not provided, it SHALL be inferred as `<mobile_number>@upi`.
+The system SHALL require each user to complete their profile with a display name and mobile number before accessing group features. On first login, if either field is missing, the system MUST prompt the user to complete their profile.
+
+The UPI ID is optional. If the user does not provide a UPI ID during profile setup or later in profile settings, the system SHALL store `null` for that field. The system MUST NOT derive or infer a UPI ID from the mobile number.
 
 The display name SHALL be globally unique. The system MUST reject updates that would result in a duplicate display name.
 
@@ -69,12 +71,18 @@ The display name SHALL be globally unique. The system MUST reject updates that w
 - **WHEN** a user signs in with email/password and has no saved display name
 - **THEN** the system derives the display name from the part of the email before the `@` symbol and presents the profile completion form
 
-#### Scenario: UPI ID inference from mobile number
-- **WHEN** a user provides a mobile number but no UPI ID during profile setup
-- **THEN** the system stores the UPI ID as `<mobile_number>@upi` and displays it to the user with an option to edit
+#### Scenario: Profile completion without UPI ID
+- **WHEN** a user provides a display name and mobile number but no UPI ID during profile setup
+- **THEN** the system marks the profile as complete and stores `null` for UPI ID
+- **AND** the user can add or update their UPI ID at any time from profile settings
+
+#### Scenario: UPI ID inherited from offline slot on registration
+- **WHEN** a user registers with a mobile number that matches an offline contributor slot that has an admin-set UPI ID, and the user's own UPI ID is null
+- **THEN** the system copies the slot's UPI ID to the user's account
+- **AND** the user immediately has a UPI ID available for Pay Now without any additional profile editing
 
 #### Scenario: Profile completion gating
-- **WHEN** a user with an incomplete profile (missing mobile or name) attempts to navigate to any page other than the profile setup page
+- **WHEN** a user with an incomplete profile (missing mobile or display name) attempts to navigate to any page other than the profile setup page
 - **THEN** the system redirects the user to the profile setup page
 
 ### Requirement: Profile editing

@@ -16,13 +16,11 @@ router = APIRouter()
 
 
 def _resolve_upi(linked_user, explicit_upi: str | None, mobile: str | None) -> str | None:
-    """Resolve effective UPI handle: linked user UPI > explicit offline UPI > mobile@upi."""
+    """Resolve effective UPI handle: linked user UPI > explicit offline UPI."""
     if linked_user and linked_user.upi_id:
         return linked_user.upi_id
     if explicit_upi:
         return explicit_upi
-    if mobile:
-        return f"{mobile}@upi"
     return None
 
 

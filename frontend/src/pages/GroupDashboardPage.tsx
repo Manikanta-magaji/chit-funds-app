@@ -158,8 +158,8 @@ export default function GroupDashboardPage() {
   // Add-contributor modal state
   const [showAddModal, setShowAddModal] = useState(false);
   type EditTarget =
-    | { kind: "slot"; slotId: number; name: string; mobile_number: string | null; upi_id: string | null }
-    | { kind: "sub-member"; slotId: number; subMemberId: number; name: string; mobile_number: string | null; upi_id: string | null; split_amount: number };
+    | { kind: "slot"; slotId: number; name: string; mobile_number: string | null; upi_id: string | null; linked_user_id: number | null }
+    | { kind: "sub-member"; slotId: number; subMemberId: number; name: string; mobile_number: string | null; upi_id: string | null; split_amount: number; linked_user_id: number | null };
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
 
   // Sub-member editing state
@@ -272,7 +272,7 @@ export default function GroupDashboardPage() {
         split_amount: parseFloat(d.split_amount),
         linked_user_id: d.linked_user_id,
         mobile_number: d.linked_user_id ? undefined : d.mobile_number?.trim() || undefined,
-        upi_id: d.linked_user_id ? undefined : d.upi_id?.trim() || undefined,
+        upi_id: d.upi_id?.trim() || undefined,
       })));
       qc.invalidateQueries({ queryKey: ["slots", groupId] });
       setEditingSubsSlotId(null);
@@ -496,8 +496,8 @@ export default function GroupDashboardPage() {
                                   <button className="btn btn-sm btn-primary" onClick={() => setShowPayModal({ payeeName, payeeUpiId: upi, amount: payNowTotal || group.installment_amount })}>
                                     💸 Pay Now
                                   </button>
-                                ) : isAdmin && (
-                                  <span className="text-muted" style={{ fontSize: "0.78rem" }}>No UPI ID — ask winner to update profile</span>
+                                ) : (
+                                  <span className="text-muted" style={{ fontSize: "0.78rem" }}>No UPI ID configured — ask winner to add it in Profile Settings or update via Edit Contributor.</span>
                                 );
                               })()
                       )}
@@ -573,9 +573,17 @@ export default function GroupDashboardPage() {
                       {isAdmin && !isRegistered && (
                         <button
                           className="btn btn-sm btn-ghost"
-                          onClick={() => setEditTarget({ kind: "slot", slotId: slot.id, name: slot.name, mobile_number: slot.mobile_number ?? null, upi_id: slot.upi_id ?? null })}
+                          onClick={() => setEditTarget({ kind: "slot", slotId: slot.id, name: slot.name, mobile_number: slot.mobile_number ?? null, upi_id: slot.upi_id ?? null, linked_user_id: slot.linked_user_id ?? null })}
                         >
                           Edit
+                        </button>
+                      )}
+                      {isAdmin && isRegistered && (
+                        <button
+                          className="btn btn-sm btn-ghost"
+                          onClick={() => setEditTarget({ kind: "slot", slotId: slot.id, name: slot.linked_user_display_name ?? slot.name, mobile_number: slot.mobile_number ?? null, upi_id: slot.upi_id ?? null, linked_user_id: slot.linked_user_id ?? null })}
+                        >
+                          Edit UPI
                         </button>
                       )}
                       {isAdmin && (
@@ -648,24 +656,13 @@ export default function GroupDashboardPage() {
                                   value={d.mobile_number}
                                   onChange={(e) => {
                                     if (d.isRegistered) return;
-                                    const newMobile = e.target.value;
-                                    const prevInferred = normalizeMobile(d.mobile_number)
-                                      ? `${normalizeMobile(d.mobile_number)}@upi`
-                                      : "";
                                     const u = [...editSubsDrafts];
-                                    u[di] = {
-                                      ...u[di],
-                                      mobile_number: newMobile,
-                                      upi_id: (!u[di].upi_id.trim() || u[di].upi_id.trim() === prevInferred)
-                                        ? (normalizeMobile(newMobile) ? `${normalizeMobile(newMobile)}@upi` : "")
-                                        : u[di].upi_id,
-                                    };
+                                    u[di] = { ...u[di], mobile_number: e.target.value };
                                     setEditSubsDrafts(u);
                                   }} />
                                 <input className="input-sm" style={{ flex: 2, minWidth: 0 }} placeholder="UPI ID"
-                                  disabled={d.isRegistered}
                                   value={d.upi_id}
-                                  onChange={(e) => { if (d.isRegistered) return; const u = [...editSubsDrafts]; u[di] = { ...u[di], upi_id: e.target.value }; setEditSubsDrafts(u); }} />
+                                  onChange={(e) => { const u = [...editSubsDrafts]; u[di] = { ...u[di], upi_id: e.target.value }; setEditSubsDrafts(u); }} />
                                 <input className="input-sm" style={{ flex: 1, minWidth: 80 }} type="number" placeholder="Amount"
                                   value={d.split_amount}
                                   onChange={(e) => { const u = [...editSubsDrafts]; u[di] = { ...u[di], split_amount: e.target.value }; setEditSubsDrafts(u); }} />

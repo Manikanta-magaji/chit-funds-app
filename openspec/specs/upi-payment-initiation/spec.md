@@ -3,17 +3,27 @@
 ### Requirement: UPI payment initiation for prize winner
 The system SHALL provide a "Pay Now" button on the group dashboard after the prize draw for the current cycle has been performed and the winner has a UPI ID configured. Clicking the button SHALL open a payment modal containing a UPI QR code and a deep-link button.
 
+When the winning slot is a single-member slot with a configured UPI ID, a single "Pay Now" button SHALL be shown. When the winning slot has multiple sub-members, one "Pay Now" button per sub-member with a configured UPI ID SHALL be shown.
+
+If the winner (or a sub-member) has no UPI ID configured, the system SHALL display a "No UPI ID configured" notice in place of the Pay Now button for that winner/sub-member. The notice SHALL be visible to all group members (not just admins) and SHALL instruct the user to ask the winner to add their UPI ID via profile settings, or ask an admin to add it via the contributor edit modal.
+
 #### Scenario: Pay Now button visible after draw with UPI-enabled winner
 - **WHEN** a group member views the group dashboard and a prize winner has been drawn for the current cycle and the winner has a UPI ID set
 - **THEN** the system displays a "Pay Now" button in the winner announcement area
 
-#### Scenario: Pay Now button hidden when winner has no UPI ID
-- **WHEN** a group member views the group dashboard and a prize winner has been drawn but the winner's UPI ID is null or empty
-- **THEN** the system hides the "Pay Now" button and shows a notice that the winner has no UPI ID configured
+#### Scenario: No UPI ID configured notice shown when winner has no UPI ID
+- **WHEN** a group member views the group dashboard and a prize winner has been drawn but the winner has no UPI ID configured
+- **THEN** the system displays a "No UPI ID configured" notice in place of the Pay Now button
+- **AND** the notice is visible to all group members (not just admins)
+- **AND** the notice instructs how to add the UPI ID (via profile settings or the contributor edit modal)
 
 #### Scenario: Pay Now button hidden before draw
 - **WHEN** a group member views the group dashboard and no prize winner has been drawn for the current cycle
-- **THEN** the system does not show the "Pay Now" button
+- **THEN** the system does not show the Pay Now button or UPI notice
+
+#### Scenario: No UPI notice per sub-member for shared winning slot
+- **WHEN** the winning slot has multiple sub-members and one sub-member has no UPI ID
+- **THEN** the system shows a Pay Now button for sub-members with a UPI ID and a "No UPI ID configured" notice for the sub-member without one
 
 ### Requirement: UPI payment QR code display
 The system SHALL render a scannable QR code encoding a UPI payment URI in the format `upi://pay?pa={UPI_ID}&pn={Name}&am={Amount}&cu=INR&tn={Note}` where `pa` is the winner's UPI ID, `pn` is the winner's display name, `am` is the group's installment amount per slot, and `tn` is an auto-generated note containing the group name and cycle number.
